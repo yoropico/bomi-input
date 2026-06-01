@@ -731,6 +731,17 @@ class GureumTests: XCTestCase {
         }
     }
 
+    func testIsNewer() throws {
+        XCTAssertTrue(UpdateManager.isNewer("1.16.0", than: "1.15.0"))
+        XCTAssertFalse(UpdateManager.isNewer("1.15.0", than: "1.15.0"))
+        XCTAssertTrue(UpdateManager.isNewer("1.10.0", than: "1.9.0"))   // 10 > 9 numerically
+        XCTAssertFalse(UpdateManager.isNewer("1.9.0", than: "1.10.0"))
+        XCTAssertTrue(UpdateManager.isNewer("v1.16.0", than: "1.15.0")) // leading v stripped
+        XCTAssertFalse(UpdateManager.isNewer("1.16.0-rc1", than: "1.16.0")) // numeric core equal
+        XCTAssertFalse(UpdateManager.isNewer("1.16.0", than: "1.16.0-rc1"))
+        XCTAssertTrue(UpdateManager.isNewer("1.16.1", than: "1.16.0-rc1"))
+    }
+
     func testSearchPoolWithoutDuplicate() {
         for (pool, key, test) in [
             (SearchSourceConst.koreanSingle, "구", "九"),
