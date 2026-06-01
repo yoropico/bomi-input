@@ -65,7 +65,11 @@ class GureumTests: XCTestCase {
         let versionInfo = UpdateManager.VersionInfo(update: update, experimental: true)
         let content = UpdateManager.updateNotificationContent(info: versionInfo)
         XCTAssertEqual("최신 버전: 1.10.0 현재 버전: \(Bundle.main.version ?? "-")\nMojave 대응을 포함한 대형 업데이트", content.body)
-        XCTAssertEqual(["url": "https://github.com/gureum/gureum/releases/tag/1.10.0"], content.userInfo as! [String: String])
+        XCTAssertEqual([
+            "url": "https://github.com/gureum/gureum/releases/tag/1.10.0",
+            "version": "1.10.0",
+            "pageURL": "https://github.com/gureum/gureum/releases/tag/1.10.0",
+        ], content.userInfo as! [String: String])
     }
 
     func testLayoutChange() {

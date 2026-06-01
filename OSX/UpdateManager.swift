@@ -144,7 +144,11 @@ class UpdateManager {
         }
         content.title = title
         content.body = "최신 버전: \(info.update.version) 현재 버전: \(info.current ?? "-")\n\(info.update.description)"
-        content.userInfo = ["url": info.update.url]
+        content.userInfo = [
+            "url": info.update.url,
+            "version": info.update.version,
+            "pageURL": info.pageURL ?? info.update.url,
+        ]
         content.categoryIdentifier = gureumUpdateNotificationCategoryIdentifier
         return content
     }
@@ -164,7 +168,7 @@ class UpdateManager {
             guard let info = info else {
                 return
             }
-            guard info.update.version != info.current else {
+            guard UpdateManager.isNewer(info.update.version, than: info.current ?? "") else {
                 return
             }
             UpdateManager.notifyUpdate(info: info)
