@@ -51,6 +51,7 @@ final class Updater {
         AF.download(downloadURL, to: destination).validate().response { [weak self] response in
             guard let self = self else { return }
             guard response.error == nil, let zipURL = response.fileURL else {
+                try? FileManager.default.removeItem(at: workDir)
                 return self.finish(completion, .failure(.download))
             }
             self.installFromZip(zipURL, workDir: workDir, info: info, completion: completion)
@@ -66,24 +67,39 @@ final class Updater {
         guard run("/usr/bin/ditto", ["-x", "-k", zipURL.path, extractDir.path]).status == 0,
               let appURL = findApp(in: extractDir)
         else {
+            try? FileManager.default.removeItem(at: workDir)
             return finish(completion, .failure(.unzip))
         }
 
         guard run("/usr/bin/codesign", ["--verify", "--strict", appURL.path]).status == 0,
               teamIdentifier(of: appURL) == expectedTeamIdentifier
         else {
+            try? FileManager.default.removeItem(at: workDir)
             return finish(completion, .failure(.verification))
         }
 
-        installWithPrivileges(appURL: appURL, info: info, completion: completion)
+        // 셸 명령에 zip이 정한 번들 이름이 끼어드는 것을 막기 위해, 검증된 앱을
+        // 통제된 고정 경로(UUID 디렉터리 + 고정 이름)로 옮긴 뒤 그 경로로 설치한다.
+        let safeAppURL = workDir.appendingPathComponent("Gureum.app")
+        try? FileManager.default.removeItem(at: safeAppURL)
+        do {
+            try FileManager.default.moveItem(at: appURL, to: safeAppURL)
+        } catch {
+            try? FileManager.default.removeItem(at: workDir)
+            return finish(completion, .failure(.install))
+        }
+
+        installWithPrivileges(appURL: safeAppURL, workDir: workDir, info: info, completion: completion)
     }
 
     private func installWithPrivileges(appURL: URL,
+                                       workDir: URL,
                                        info: UpdateManager.VersionInfo,
                                        completion: @escaping (Result<Void, UpdaterError>) -> Void)
     {
         let src = appURL.path
-        // 셸 경로는 작은따옴표로 감싼다(AppleScript 문자열은 큰따옴표).
+        // 셸 경로는 작은따옴표로 감싼다(AppleScript 문자열은 큰따옴표). src는 통제된
+        // 고정 경로이므로 주입 위험이 없다.
         let shell = "rm -rf '\(installPath)' && cp -R '\(src)' '\(inputMethodsDir)/' && "
             + "/usr/bin/killall -TERM Gureum 2>/dev/null; '\(lsregisterPath)' -f '\(installPath)'; true"
         let source = "do shell script \"\(shell)\" with administrator privileges"
@@ -93,6 +109,7 @@ final class Updater {
             var errorDict: NSDictionary?
             let script = NSAppleScript(source: source)
             _ = script?.executeAndReturnError(&errorDict)
+            try? FileManager.default.removeItem(at: workDir)
             if let error = errorDict {
                 let code = (error[NSAppleScript.errorNumber] as? Int) ?? 0
                 if code == -128 { // userCanceledErr
@@ -146,8 +163,14 @@ final class Updater {
         } catch {
             return (-1, "", "\(error)")
         }
-        let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
-        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+        // 두 파이프를 동시에 비워, 한쪽 버퍼가 차서 프로세스가 멈추는 교착을 막는다.
+        var outData = Data()
+        var errData = Data()
+        let group = DispatchGroup()
+        let queue = DispatchQueue(label: "org.youknowone.gureum.updater.pipe", attributes: .concurrent)
+        queue.async(group: group) { outData = outPipe.fileHandleForReading.readDataToEndOfFile() }
+        queue.async(group: group) { errData = errPipe.fileHandleForReading.readDataToEndOfFile() }
+        group.wait()
         process.waitUntilExit()
         return (process.terminationStatus,
                 String(data: outData, encoding: .utf8) ?? "",
