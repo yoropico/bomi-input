@@ -124,8 +124,6 @@
 		CE21ADFF280A11A600B54371 /* Alamofire in Frameworks */ = {isa = PBXBuildFile; productRef = CE21ADFE280A11A600B54371 /* Alamofire */; };
 		CE21AE09280B06B000B54371 /* TISInputSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE21AE05280B068B00B54371 /* TISInputSource.swift */; };
 		CE21AE10280B0B2200B54371 /* SwiftUp in Frameworks */ = {isa = PBXBuildFile; productRef = CE21AE0F280B0B2200B54371 /* SwiftUp */; };
-		CE31CC0A28109975004659B0 /* FirebaseCrashlytics in Frameworks */ = {isa = PBXBuildFile; productRef = CE31CC0928109975004659B0 /* FirebaseCrashlytics */; };
-		CE31CC0D28109B95004659B0 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = CE31CC0C28109B95004659B0 /* GoogleService-Info.plist */; };
 		D98806252931170A0073EF2F /* hangul-combination-3fs.xml in Copy Keyboards Files */ = {isa = PBXBuildFile; fileRef = 5F9C0E22FD6549C16CC80600 /* hangul-combination-3fs.xml */; };
 		E5A0EA0A2139098800D4AD69 /* GureumAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5A0EA092139098800D4AD69 /* GureumAppDelegate.swift */; };
 		E5ED2DE4213030B700BD9B13 /* GureumMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5ED2DE3213030B700BD9B13 /* GureumMenu.swift */; };
@@ -386,7 +384,6 @@
 		A36A4358216F86780052BE12 /* emoji_ko.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = emoji_ko.txt; sourceTree = "<group>"; };
 		A3BAAE062160C6970076C66D /* GureumTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = GureumTests.swift; sourceTree = "<group>"; };
 		CE21AE05280B068B00B54371 /* TISInputSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TISInputSource.swift; sourceTree = "<group>"; };
-		CE31CC0C28109B95004659B0 /* GoogleService-Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		E54B8381214299EB00527218 /* GureumComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GureumComposer.swift; sourceTree = "<group>"; };
 		E5A0EA092139098800D4AD69 /* GureumAppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GureumAppDelegate.swift; sourceTree = "<group>"; };
 		E5BB72CC214A788100E35558 /* InputController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputController.swift; sourceTree = "<group>"; };
@@ -404,8 +401,7 @@
 				38EE977619FFD65600AD19B8 /* Carbon.framework in Frameworks */,
 				38531F441B0E7E7C00E2C16D /* SystemConfiguration.framework in Frameworks */,
 				38946A6B19F4F3FD00920E09 /* InputMethodKit.framework in Frameworks */,
-				CE31CC0A28109975004659B0 /* FirebaseCrashlytics in Frameworks */,
-				38531F431B0E7E7C00E2C16D /* Security.framework in Frameworks */,
+					38531F431B0E7E7C00E2C16D /* Security.framework in Frameworks */,
 				CE21ADE7280A03B500B54371 /* MASShortcut in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -449,8 +445,7 @@
 		38162DF6141263270077AA2D /* OSX */ = {
 			isa = PBXGroup;
 			children = (
-				CE31CC0C28109B95004659B0 /* GoogleService-Info.plist */,
-				38531F3D1B0E7E7C00E2C16D /* Security.framework */,
+					38531F3D1B0E7E7C00E2C16D /* Security.framework */,
 				38531F3E1B0E7E7C00E2C16D /* SystemConfiguration.framework */,
 				38C253EA19F4EE320020FE92 /* Gureum.entitlements */,
 				38FA220114233FD900444D67 /* Hangul.xcodeproj */,
@@ -710,8 +705,7 @@
 				38162DF0141263270077AA2D /* Frameworks */,
 				38162DF1141263270077AA2D /* Resources */,
 				387736EB1423561F00DE50D6 /* Copy Frameworks */,
-				CE31CC0B281099D9004659B0 /* Run Crashlytics */,
-			);
+				);
 			buildRules = (
 			);
 			dependencies = (
@@ -724,8 +718,7 @@
 			packageProductDependencies = (
 				CE21ADD8280A026300B54371 /* MASShortcut */,
 				CE21ADFE280A11A600B54371 /* Alamofire */,
-				CE31CC0928109975004659B0 /* FirebaseCrashlytics */,
-			);
+				);
 			productName = OSX;
 			productReference = 38162DF3141263270077AA2D /* Gureum.app */;
 			productType = "com.apple.product-type.application";
@@ -905,8 +898,7 @@
 			mainGroup = 38863C4E140E62D100A8ED76;
 			packageReferences = (
 				CE21ADD7280A026300B54371 /* XCRemoteSwiftPackageReference "MASShortcut" */,
-				CE21ADEA280A0F6300B54371 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
-				CE21ADF4280A0FC800B54371 /* XCRemoteSwiftPackageReference "fuse-swift" */,
+					CE21ADF4280A0FC800B54371 /* XCRemoteSwiftPackageReference "fuse-swift" */,
 				CE21ADFD280A11A600B54371 /* XCRemoteSwiftPackageReference "Alamofire" */,
 				CE21AE0E280B0B2200B54371 /* XCRemoteSwiftPackageReference "SwiftUp" */,
 			);
@@ -966,8 +958,7 @@
 				382E68761A13156700031D1D /* Preferences.prefPane in Resources */,
 				38162DFB141263280077AA2D /* InfoPlist.strings in Resources */,
 				38162E4814128A740077AA2D /* MainMenu.xib in Resources */,
-				CE31CC0D28109B95004659B0 /* GoogleService-Info.plist in Resources */,
-				388E2A611469249700ADBDA5 /* Hangul.strings in Resources */,
+					388E2A611469249700ADBDA5 /* Hangul.strings in Resources */,
 				38098F0A215A3DB30001F159 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1039,26 +1030,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\n";
-		};
-		CE31CC0B281099D9004659B0 /* Run Crashlytics */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 12;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Resources/DWARF/${TARGET_NAME}",
-				"$(SRCROOT)/$(BUILT_PRODUCTS_DIR)/$(INFOPLIST_PATH)",
-			);
-			name = "Run Crashlytics";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/bash;
-			shellScript = "\"${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -1721,14 +1692,6 @@
 				revision = 6ddfd5f866f8f9679b5af656604dd33cc2540a48;
 			};
 		};
-		CE21ADEA280A0F6300B54371 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/firebase/firebase-ios-sdk.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 8.0.0;
-			};
-		};
 		CE21ADF4280A0FC800B54371 /* XCRemoteSwiftPackageReference "fuse-swift" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/krisk/fuse-swift";
@@ -1775,11 +1738,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = CE21AE0E280B0B2200B54371 /* XCRemoteSwiftPackageReference "SwiftUp" */;
 			productName = SwiftUp;
-		};
-		CE31CC0928109975004659B0 /* FirebaseCrashlytics */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = CE21ADEA280A0F6300B54371 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseCrashlytics;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

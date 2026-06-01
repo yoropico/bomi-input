@@ -7,7 +7,6 @@
 //
 
 import Cocoa
-import Firebase
 import Foundation
 import GureumCore
 import Hangul
@@ -57,9 +56,6 @@ class GureumAppDelegate: NSObject, NSApplicationDelegate, GureumApplicationDeleg
     let configuration = Configuration.shared
 
     func applicationDidFinishLaunching(_: Notification) {
-        FirebaseApp.configure()
-        UserDefaults.standard.register(defaults: ["NSApplicationCrashOnExceptions": true])
-
         if #available(macOS 10.14, *) {
             let center = UNUserNotificationCenter.current()
             center.delegate = NotificationCenterDelegate.appDefault
