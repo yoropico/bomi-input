@@ -82,8 +82,13 @@ final class GureumComposer: Composer {
 
     init() {
         romanComposer = systemRomanComposer
-        inputMode = Configuration.shared.lastRomanInputMode
+        // 기본 delegate를 먼저 둔다(잘못된 모드로 setter가 일찍 반환해도 안전).
         delegate = romanComposer
+        // 직전 한/영 상태를 이어받는다. 항상 로마자로 시작하면, 빠른
+        // activate/deactivate churn에서 시스템 setValue를 놓쳤을 때 한글
+        // 표시 상태인데도 영어로 고착되는 문제가 생긴다.
+        // inputMode setter가 알맞은 delegate(한글/로마자)를 정하므로 마지막에 호출한다.
+        inputMode = Configuration.shared.lastInputMode
     }
 
     // MARK: Composer 프로토콜 구현
@@ -166,6 +171,7 @@ extension GureumComposer {
                 Configuration.shared.lastHangulInputMode = newValue
             }
 
+            Configuration.shared.lastInputMode = newValue
             _inputMode = newValue
         }
     }

@@ -15,6 +15,8 @@ enum ConfigurationName {
     public static let lastHangulInputMode = "LastHangulInputMode"
     /// 마지막 로마자 입력 모드.
     public static let lastRomanInputMode = "LastRomanInputMode"
+    /// 마지막 입력 모드(한글/로마자 무관). 새 입력 세션의 초기 모드로 사용.
+    public static let lastInputMode = "LastInputMode"
 
     /// 입력기 바꾸기 단축키.
     public static let inputModeExchangeKey = "InputModeExchangeKey"
@@ -89,6 +91,7 @@ public class Configuration: UserDefaults {
         register(defaults: [
             ConfigurationName.lastHangulInputMode: "org.youknowone.inputmethod.Gureum.han2",
             ConfigurationName.lastRomanInputMode: "org.youknowone.inputmethod.Gureum.qwerty",
+            ConfigurationName.lastInputMode: "org.youknowone.inputmethod.Gureum.qwerty",
 
             ConfigurationName.inputModeSearchKey: Configuration.convertShortcutToConfiguration((.return, .option)),
             ConfigurationName.optionKeyBehavior: 1,
@@ -134,6 +137,17 @@ public class Configuration: UserDefaults {
         }
         set {
             set(newValue, forKey: ConfigurationName.lastRomanInputMode)
+        }
+    }
+
+    /// 마지막 입력 모드(한글/로마자 무관). 새 입력 세션의 초기 모드로 사용해,
+    /// 시스템 setValue가 누락되어도 직전 한/영 상태를 유지한다.
+    public var lastInputMode: String {
+        get {
+            string(forKey: ConfigurationName.lastInputMode)!
+        }
+        set {
+            set(newValue, forKey: ConfigurationName.lastInputMode)
         }
     }
 
