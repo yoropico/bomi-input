@@ -23,3 +23,8 @@ Pods
 .python-version
 *.playground
 Crashlytics.framework
+
+# devmode/Claude Code local state
+.claude/settings.local.json
+.claude/logs/
+.claude/backups/
