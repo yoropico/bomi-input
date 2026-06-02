@@ -25,8 +25,8 @@ extension InputController {
     }
 
     private func checkVersion(mode: UpdateMode) {
-        var title = ""
-        var version = ""
+        let title: String
+        let version: String
         switch mode {
         case .Stable:
             title = "업데이트"
@@ -44,28 +44,44 @@ extension InputController {
                 alert.runModal()
                 return
             }
-            if info.update.version == info.current {
-                let fmt = "현재 사용하고 있는 구름 입력기 \(info.current ?? "-") 는 최신 \(version)입니다."
+            guard UpdateManager.isNewer(info.update.version, than: info.current ?? "") else {
                 let alert = NSAlert()
                 alert.messageText = "구름 입력기 \(title) 확인"
                 alert.addButton(withTitle: "확인")
-                alert.informativeText = fmt
+                alert.informativeText = "현재 사용하고 있는 구름 입력기 \(info.current ?? "-") 는 최신 \(version)입니다."
                 alert.runModal()
-            } else {
-                var message = "현재 사용하고 있는 구름 입력기는 \(info.current ?? "-") 이고 최신 \(version)은 \(info.update.version) 입니다. 업데이트는 로그아웃하거나 재부팅해야 적용됩니다."
-                if !info.update.description.isEmpty {
-                    message += " 업데이트 요약은 '\(info.update.description)' 입니다."
+                return
+            }
+            var message = "현재 버전 \(info.current ?? "-"), 최신 \(version) \(info.update.version). 지금 업데이트하면 다운로드 후 설치하며, 로그아웃하거나 재부팅해야 적용됩니다."
+            if !info.update.description.isEmpty {
+                message += "\n\n\(info.update.description)"
+            }
+            let alert = NSAlert()
+            alert.messageText = "구름 입력기 \(title) 확인"
+            alert.informativeText = message
+            alert.addButton(withTitle: "지금 업데이트")
+            alert.addButton(withTitle: "나중에")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            Updater.shared.performUpdate(info: info) { result in
+                let done = NSAlert()
+                switch result {
+                case .success:
+                    done.messageText = "업데이트 완료"
+                    done.informativeText = "로그아웃 후 다시 로그인하면 적용됩니다."
+                case let .failure(error):
+                    done.messageText = "업데이트 실패"
+                    switch error {
+                    case .cancelled: return
+                    case .verification:
+                        done.informativeText = "다운로드한 앱의 서명 검증에 실패해 설치를 중단했습니다."
+                    case .sandboxed, .noAsset:
+                        done.informativeText = "자동 설치를 진행할 수 없어 릴리스 페이지를 열었습니다. 직접 설치해 주세요."
+                    default:
+                        done.informativeText = "업데이트 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요."
+                    }
                 }
-                if let url = URL(string: info.update.url) {
-                    NSWorkspace.shared.open(url)
-                } else {
-                    message += " 현재 업데이트 링크를 찾을 수 없습니다. 버그 리포트를 부탁드립니다."
-                }
-                let alert = NSAlert()
-                alert.messageText = "구름 입력기 \(title) 확인"
-                alert.addButton(withTitle: "확인")
-                alert.informativeText = message
-                alert.runModal()
+                done.addButton(withTitle: "확인")
+                done.runModal()
             }
         }
     }

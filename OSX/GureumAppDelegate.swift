@@ -32,15 +32,18 @@ class NotificationCenterDelegate: NSObject, UNUserNotificationCenterDelegate {
         guard let download = userInfo["url"] as? String else {
             return
         }
-        var updating = false
         switch response.actionIdentifier {
         case gureumUpdateNotificationActionIdentifier, UNNotificationDefaultActionIdentifier:
-            updating = true
+            let version = userInfo["version"] as? String ?? ""
+            let pageURL = userInfo["pageURL"] as? String
+            let info = UpdateManager.VersionInfo(
+                update: UpdateManager.UpdateInfo(version: version, description: "", url: download),
+                experimental: false,
+                pageURL: pageURL
+            )
+            Updater.shared.performUpdate(info: info) { _ in }
         default:
             break
-        }
-        if updating {
-            NSWorkspace.shared.open(URL(string: download)!)
         }
     }
 }
