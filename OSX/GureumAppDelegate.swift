@@ -164,7 +164,7 @@ final class CloudStatusItemController: NSObject {
             // Apple SF Symbol cloud, drawn directly (vector -> crisp; status-item slot is
             // width-flexible -> the wide cloud shows undistorted). Korean = filled, English = outline.
             let symbol = state == .korean ? "icloud.fill" : "icloud"
-            let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
+            let config = NSImage.SymbolConfiguration(pointSize: 21, weight: .regular)
             let image = NSImage(systemSymbolName: symbol,
                                 accessibilityDescription: state == .korean ? "한국어" : "영문")?
                 .withSymbolConfiguration(config)
