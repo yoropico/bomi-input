@@ -46,7 +46,7 @@ func renderIcon(symbolName: String, frac: (fx: CGFloat, fy: CGFloat, fw: CGFloat
     let ctx = NSGraphicsContext(bitmapImageRep: rep)!
     NSGraphicsContext.current = ctx
     ctx.shouldAntialias = true
-    let margin: CGFloat = -0.08
+    let margin: CGFloat = 0.0   // fill the tile fully (no clip); outline strokes must not be cut
     let target = s * (1 - 2 * margin)
     let sym = makeSymbol(symbolName, s)
     let isz = sym.size
