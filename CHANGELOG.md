@@ -21,7 +21,7 @@
 
 - **Firebase Crashlytics 전체 제거.** `firebase-ios-sdk` SPM 의존성, `FirebaseCrashlytics` 링크, "Run Crashlytics" 빌드 페이즈, 번들되던 `GoogleService-Info.plist`, `FirebaseApp.configure()` 호출을 모두 제거했습니다. 크래시 리포트가 이 포크가 아닌 upstream 작성자의 Firebase 프로젝트로만 전송되던 것을 없애면서, gRPC·BoringSSL·protobuf 등 약 16개의 transitive SPM 패키지가 함께 사라졌습니다(남은 의존성: MASShortcut·Fuse·Alamofire·SwiftUp). 크래시 수집을 위해 켜 두던 `NSApplicationCrashOnExceptions` 등록도 함께 제거했습니다.
 - **죽은 분석 코드(`AnswersHelper`) 제거.** Fabric/Answers SDK가 빠진 뒤 본문이 전부 주석 처리되어 아무 동작도 하지 않던 셸과 모든 호출부를 제거했습니다.
-- **미사용 iOS 서브시스템 제거.** 어떤 활성 빌드(Gureum.xcodeproj·Makefile·CI 모두 macOS 전용)에서도 참조되지 않고, 2020년에 종료된 Fabric/Crashlytics SDK를 import하던 iOS 소스 일체(`iOS/`, `iOSApp/`, `iOSShared/`, `iOSTests/`, `iOSTheme/`)와 독립 `iOS.xcodeproj`를 제거했습니다(약 1만 줄).
+- **미사용 iOS 서브시스템 제거.** 어떤 활성 빌드(bomi-input.xcodeproj·Makefile·CI 모두 macOS 전용)에서도 참조되지 않고, 2020년에 종료된 Fabric/Crashlytics SDK를 import하던 iOS 소스 일체(`iOS/`, `iOSApp/`, `iOSShared/`, `iOSTests/`, `iOSTheme/`)와 독립 `iOS.xcodeproj`를 제거했습니다(약 1만 줄).
 
 ## [1.14.0] - 2026-06-01
 
@@ -29,15 +29,15 @@ upstream `1.13.2`를 기반으로 한 첫 포크 릴리스입니다.
 
 ### 고침 (Fixed)
 
-- **한글 입력이 영어로 고착되는 문제** ([#2](https://github.com/yoropico/gureum/pull/2)) — Edge/Chromium 등 포커스가 빠르게 바뀌는(activate/deactivate가 잦은) 앱에서, 입력 소스 표시는 한글인데 실제로는 영어가 입력되던 문제를 고쳤습니다.
+- **한글 입력이 영어로 고착되는 문제** ([#2](https://github.com/yoropico/bomi-input/pull/2)) — Edge/Chromium 등 포커스가 빠르게 바뀌는(activate/deactivate가 잦은) 앱에서, 입력 소스 표시는 한글인데 실제로는 영어가 입력되던 문제를 고쳤습니다.
   - 원인 ① `GureumComposer`가 새 입력 세션을 항상 마지막 *로마자* 모드(쿼티)로 시작해, 시스템의 `setValue`(한/영 전환) 호출을 놓치면 한글 표시 상태인데도 영어로 고착되었습니다.
   - 원인 ② 초기화 시 `inputMode`를 설정한 뒤 `delegate`를 로마자 조합기로 덮어써, 한글 모드인데 영어가 입력되었습니다.
   - 수정: `Configuration`에 `lastInputMode`(한/영 무관, 마지막 실제 입력 모드)를 추가하고, `GureumComposer.init`이 이 값을 초기 모드로 이어받도록 했습니다. 또한 기본 `delegate`를 `inputMode` 설정보다 *먼저* 두어, `inputMode` setter가 정한 조합기가 항상 마지막에 적용되게 했습니다.
-- **Preferences 타겟 빌드 실패** ([#1](https://github.com/yoropico/gureum/pull/1)) — Xcode의 explicitly-built modules 환경에서 `PreferenceViewController`가 `SwiftIOKit` 대신 `IOKit.hid`를 import 하도록 바꿔 빌드 오류를 해결했습니다.
+- **Preferences 타겟 빌드 실패** ([#1](https://github.com/yoropico/bomi-input/pull/1)) — Xcode의 explicitly-built modules 환경에서 `PreferenceViewController`가 `SwiftIOKit` 대신 `IOKit.hid`를 import 하도록 바꿔 빌드 오류를 해결했습니다.
 
 ### 바뀜 (Changed)
 
-- **알림 시스템 현대화** ([#1](https://github.com/yoropico/gureum/pull/1)) — deprecated된 `NSUserNotification` / `NSUserNotificationCenter`를 최신 `UserNotifications` 프레임워크로 마이그레이션했습니다. (`OSX/GureumAppDelegate.swift`, `OSX/UpdateManager.swift`, 관련 테스트)
+- **알림 시스템 현대화** ([#1](https://github.com/yoropico/bomi-input/pull/1)) — deprecated된 `NSUserNotification` / `NSUserNotificationCenter`를 최신 `UserNotifications` 프레임워크로 마이그레이션했습니다. (`OSX/GureumAppDelegate.swift`, `OSX/UpdateManager.swift`, 관련 테스트)
 
-[1.15.0]: https://github.com/yoropico/gureum/compare/1.14.0...main
-[1.14.0]: https://github.com/yoropico/gureum/compare/1.13.2...1.14.0
+[1.15.0]: https://github.com/yoropico/bomi-input/compare/1.14.0...main
+[1.14.0]: https://github.com/yoropico/bomi-input/compare/1.13.2...1.14.0
