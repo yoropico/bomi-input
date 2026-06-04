@@ -94,28 +94,13 @@ extension InputController {
         checkVersion(mode: .Experimental)
     }
 
-    @IBAction func openWebsite(_: Any) {
-        let url = URL(string: "http://gureum.io")!
-        NSWorkspace.shared.open(url)
-    }
-
-    @IBAction func openWebsiteHelp(_: Any) {
-        let url = URL(string: "http://dan.gureum.io")!
-        NSWorkspace.shared.open(url)
-    }
-
     @IBAction func openWebsiteSource(_: Any) {
-        let url = URL(string: "http://ssi.gureum.io")!
+        let url = URL(string: "https://github.com/yoropico/bomi-input")!
         NSWorkspace.shared.open(url)
     }
 
     @IBAction func openWebsiteIssues(_: Any) {
-        let url = URL(string: "http://meok.gureum.io")!
-        NSWorkspace.shared.open(url)
-    }
-
-    @IBAction func openWebsiteDonation(_: Any) {
-        let url = URL(string: "http://donation.gureum.io")!
+        let url = URL(string: "https://github.com/yoropico/bomi-input/issues")!
         NSWorkspace.shared.open(url)
     }
 }
