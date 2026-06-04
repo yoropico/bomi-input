@@ -362,6 +362,34 @@ public class Configuration: UserDefaults {
     }
 }
 
+// MARK: - 인라인 강제 marked 목록 편집기 텍스트 ↔ [String] 정규화
+//
+// Preferences(prefpane, USE_PREFPANE) 타깃은 GureumCore를 import하지 않고
+// Configuration.swift를 in-module로 컴파일하므로, 편집기 UI가 쓰는 이 헬퍼를
+// 여기에 둬야 모든 타깃(앱·prefpane·OSXCore 테스트)에서 해결된다.
+
+/// 강제 marked 목록 편집기의 텍스트(번들 ID 한 줄에 하나)를 정규화된 배열로 변환한다.
+/// 각 줄을 trim하고 빈 줄은 버리며, 대소문자 무시로 중복을 제거(첫 등장 보존)한다.
+public func parseForcedMarkedBundleIDList(_ text: String) -> [String] {
+    var result: [String] = []
+    var seen = Set<String>()
+    for rawLine in text.components(separatedBy: .newlines) {
+        let trimmed = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            continue
+        }
+        if seen.insert(trimmed.lowercased()).inserted {
+            result.append(trimmed)
+        }
+    }
+    return result
+}
+
+/// 정규화된 번들 ID 배열을 편집기 표시용 텍스트(줄바꿈 구분)로 변환한다.
+public func formatForcedMarkedBundleIDList(_ list: [String]) -> String {
+    return list.joined(separator: "\n")
+}
+
 private extension Configuration {
     func shortcut(forKey key: String) -> Shortcut? {
         guard let value = dictionary(forKey: key) else { return nil }

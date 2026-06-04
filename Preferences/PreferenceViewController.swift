@@ -52,6 +52,13 @@ final class PreferenceViewController: NSViewController {
     /// 실험버전 업데이트 알림 받기
     @IBOutlet private var updateNotificationExperimentalButton: NSButton!
 
+    /// 설정 항목들이 담긴 최상위 세로 스택뷰. 인라인 직접 입력 섹션을
+    /// 코드로 만들어 여기에 덧붙인다(취약한 컨트롤 XML을 xib에 추가하지 않기 위함).
+    @IBOutlet private var inlineSettingsStackView: NSStackView!
+
+    /// 강제 marked 번들 ID 편집기. textDidChange에서 식별하기 위해 참조를 보관한다.
+    private weak var inlineForcedMarkedTextView: NSTextView?
+
     private let configuration = Configuration()
     private let pane: GureumPreferencePane! = nil
     private let shortcutValidator = GureumShortcutValidator()
@@ -125,6 +132,8 @@ final class PreferenceViewController: NSViewController {
         #if DEBUG
             debugButton.isHidden = false
         #endif
+
+        setupInlineDirectInputSection()
     }
 
     private func runAppleScript(_ script: String) {
@@ -260,6 +269,16 @@ final class PreferenceViewController: NSViewController {
             self.updateCheck()
         }
     }
+
+    // MARK: 인라인 직접 입력 (프로그램적으로 구성한 컨트롤의 액션)
+
+    @objc private func inlineCompositionEnabledValueChanged(_ sender: NSButton) {
+        configuration.inlineCompositionEnabled = sender.state == .on
+    }
+
+    @objc private func inlineCompositionAlwaysMarkedValueChanged(_ sender: NSButton) {
+        configuration.inlineCompositionAlwaysMarked = sender.state == .on
+    }
 }
 
 // MARK: - 비공개 메소드
@@ -267,6 +286,83 @@ final class PreferenceViewController: NSViewController {
 private extension PreferenceViewController {
     func isOn(_ value: Bool) -> NSButton.StateValue {
         return value ? .on : .off
+    }
+
+    /// 인라인 직접 입력 설정 섹션을 코드로 구성해 설정 스택뷰에 덧붙인다.
+    /// xib에는 스택뷰 outlet 한 줄만 추가하고, 컨트롤은 전부 여기서 만든다.
+    func setupInlineDirectInputSection() {
+        guard let stack = inlineSettingsStackView else {
+            return
+        }
+
+        let header = makeSectionLabel("인라인 직접 입력 (실험적)")
+
+        let enabledCheckbox = makeCheckbox(
+            title: "인라인 직접 입력 사용 (밑줄 없는 조합)",
+            state: isOn(configuration.inlineCompositionEnabled),
+            action: #selector(inlineCompositionEnabledValueChanged(_:))
+        )
+
+        let alwaysMarkedCheckbox = makeCheckbox(
+            title: "항상 밑줄 조합(marked text) 사용",
+            state: isOn(configuration.inlineCompositionAlwaysMarked),
+            action: #selector(inlineCompositionAlwaysMarkedValueChanged(_:))
+        )
+
+        let listLabel = makeHelpLabel("밑줄 조합(marked)을 강제할 앱 (번들 ID, 한 줄에 하나):")
+
+        let scrollView = NSTextView.scrollableTextView()
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.borderType = .bezelBorder
+        scrollView.hasVerticalScroller = true
+        if let textView = scrollView.documentView as? NSTextView {
+            textView.isRichText = false
+            textView.font = NSFont.userFixedPitchFont(ofSize: 11) ?? NSFont.systemFont(ofSize: 11)
+            textView.isAutomaticQuoteSubstitutionEnabled = false
+            textView.isAutomaticDashSubstitutionEnabled = false
+            textView.isAutomaticSpellingCorrectionEnabled = false
+            textView.isAutomaticTextReplacementEnabled = false
+            textView.delegate = self
+            textView.string = formatForcedMarkedBundleIDList(configuration.inlineCompositionForcedMarkedBundleIDs)
+            inlineForcedMarkedTextView = textView
+        }
+        NSLayoutConstraint.activate([
+            scrollView.heightAnchor.constraint(equalToConstant: 84),
+            scrollView.widthAnchor.constraint(greaterThanOrEqualToConstant: 320),
+        ])
+
+        let helpLabel = makeHelpLabel("Safari·Chrome 등 브라우저는 자동 판정됩니다. 조합이 깨지는 앱을 여기에 추가하세요. (인라인 사용이 켜져 있을 때만 적용)")
+
+        let section = NSStackView(views: [header, enabledCheckbox, alwaysMarkedCheckbox, listLabel, scrollView, helpLabel])
+        section.orientation = .vertical
+        section.alignment = .leading
+        section.spacing = 8
+        section.translatesAutoresizingMaskIntoConstraints = false
+
+        stack.addArrangedSubview(section)
+    }
+
+    func makeSectionLabel(_ text: String) -> NSTextField {
+        let label = NSTextField(labelWithString: text)
+        label.font = NSFont.boldSystemFont(ofSize: NSFont.systemFontSize)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }
+
+    func makeHelpLabel(_ text: String) -> NSTextField {
+        let label = NSTextField(wrappingLabelWithString: text)
+        label.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        label.textColor = .secondaryLabelColor
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.preferredMaxLayoutWidth = 360
+        return label
+    }
+
+    func makeCheckbox(title: String, state: NSButton.StateValue, action: Selector) -> NSButton {
+        let button = NSButton(checkboxWithTitle: title, target: self, action: action)
+        button.state = state
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
     }
 
     func loadShortcutValues() {
@@ -352,5 +448,20 @@ extension PreferenceViewController: NSComboBoxDataSource {
         }
         overridingKeyboardNameComboBox.stringValue = ""
         return ""
+    }
+}
+
+// MARK: - NSTextViewDelegate (강제 marked 번들 ID 편집기)
+
+extension PreferenceViewController: NSTextViewDelegate {
+    func textDidChange(_ notification: Notification) {
+        guard let textView = notification.object as? NSTextView,
+              textView === inlineForcedMarkedTextView
+        else {
+            return
+        }
+        // 편집 중에는 정규화된 값만 저장하고 편집기 텍스트는 그대로 둔다
+        // (입력 도중 재포맷하면 커서/타이핑이 깨지므로). 다음 열람 시 정규화 표시.
+        configuration.inlineCompositionForcedMarkedBundleIDs = parseForcedMarkedBundleIDList(textView.string)
     }
 }

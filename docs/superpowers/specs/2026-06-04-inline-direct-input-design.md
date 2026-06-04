@@ -1,8 +1,9 @@
 # Inline direct-input (no-underline composition) — design
 
 Date: 2026-06-04. Target: bomi-input (macOS IME, libhangul + InputMethodKit).
-Status: P1 (core) + P2 (engines + config) implemented (2026-06-05), behind the
-default-FALSE `inlineCompositionEnabled` kill-switch. P3 (edges + UI) pending.
+Status: P1 (core) + P2 (engines + config) + P3 **UI** implemented (2026-06-05), behind the
+default-FALSE `inlineCompositionEnabled` kill-switch. P3 hot-path hardening (first-roman-leak
+repair, eager-sync) intentionally deferred — see the P3 note below.
 
 ## Goal
 
@@ -147,9 +148,22 @@ toggles later.
   (`usesChromiumFrameworkTextStack`, cached by bundle ID). Config key
   `inlineCompositionForcedMarkedBundleIDs`. classifyComposition chain steps 3–5 wired.
   Unit tests cover every branch (OSXTests 65/1-baseline). Defaults-key driven; UI still P3.
-- **P3 (edges + UI)** — pending: first-roman-leak repair, eager-sync avoidance, full state
-  reset hardening, Preferences UI for toggles + blocklist editor. Then flip the kill-switch
-  ON + run the on-device manual matrix.
+- **P3 (edges + UI)** — UI DONE (2026-06-05); hot-path hardening DEFERRED by decision.
+  - **Done — Preferences UI**: the in-app settings pane (Preferences/PreferenceViewController.swift)
+    gained an "인라인 직접 입력 (실험적)" section, built PROGRAMMATICALLY and appended to the settings
+    stack view via a single new xib outlet (`inlineSettingsStackView` → `kLe-bm-FOO`) — no fragile
+    control XML added to Preferences.xib. Controls: master enable (`inlineCompositionEnabled`),
+    global always-marked (`inlineCompositionAlwaysMarked`), and a newline-separated bundle-ID editor
+    (NSTextView) for `inlineCompositionForcedMarkedBundleIDs`. Editor text↔[String] normalization
+    (`parseForcedMarkedBundleIDList`/`formatForcedMarkedBundleIDList`) lives in Configuration.swift
+    (NOT InlineComposition.swift) because the legacy prefpane target (USE_PREFPANE) compiles a subset
+    of OSXCore in-module that includes Configuration.swift but not InlineComposition.swift. Unit-tested.
+  - **Deferred — hot-path hardening** (first-roman-leak repair, eager-sync avoidance, extra reset
+    hardening): DKST's `repairFirstMarkedTextLeakForClient:`/`syncInputClient:force:`/`resetCompositionState`
+    are tied to DKST's own engine and are SPECULATIVE for bomi (libhangul + IMKit) — the leak/eager-sync
+    problems may not even manifest. Porting them would touch the input hot-path (the rebrand-bug area)
+    for problems unconfirmed on-device. Decision: enable inline (now possible via the UI), dogfood, and
+    only port these if real on-device problems appear. P1 already handles the reset cases its tests cover.
 
 ## Attribution
 

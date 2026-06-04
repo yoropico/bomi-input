@@ -132,6 +132,13 @@ public func bundleIdentifierMatchesForcedMarkedList(_ bundleID: String, _ list: 
     return list.contains { $0.lowercased() == needle }
 }
 
+// 참고: 강제 marked 목록 편집기 텍스트 ↔ [String] 정규화 헬퍼
+// (`parseForcedMarkedBundleIDList` / `formatForcedMarkedBundleIDList`)는
+// Configuration.swift에 있다. 이유: Preferences(prefpane, USE_PREFPANE) 타깃은
+// GureumCore를 import하지 않고 OSXCore 소스 일부만 in-module로 컴파일하는데,
+// 그 목록에 InlineComposition.swift는 없고 Configuration.swift는 있다. 편집기
+// UI가 쓰는 이 두 헬퍼를 Configuration.swift에 두면 모든 타깃에서 해결된다.
+
 // MARK: - Composition mode policy
 
 /// 주어진 클라이언트 정보(`caps`)만으로 합성 표시 방식을 결정하는 순수 함수.

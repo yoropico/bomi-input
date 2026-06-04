@@ -104,6 +104,31 @@ class InlineCompositionTests: XCTestCase {
         XCTAssertFalse(bundleIdentifierMatchesForcedMarkedList("", list))
     }
 
+    // MARK: - P3: blocklist editor text <-> [String] normalization
+
+    func testParseForcedMarkedListSplitsTrimsAndDropsBlanks() {
+        let text = "com.acme.Editor\n  net.example.App  \n\n\tcom.foo.Bar\n   \n"
+        XCTAssertEqual(parseForcedMarkedBundleIDList(text),
+                       ["com.acme.Editor", "net.example.App", "com.foo.Bar"])
+    }
+
+    func testParseForcedMarkedListDedupesCaseInsensitivelyKeepingFirst() {
+        let text = "com.acme.Editor\ncom.acme.editor\nnet.example.App\ncom.acme.EDITOR"
+        XCTAssertEqual(parseForcedMarkedBundleIDList(text),
+                       ["com.acme.Editor", "net.example.App"])
+    }
+
+    func testParseForcedMarkedListEmptyOrBlankYieldsEmpty() {
+        XCTAssertEqual(parseForcedMarkedBundleIDList(""), [])
+        XCTAssertEqual(parseForcedMarkedBundleIDList("   \n\t\n  "), [])
+    }
+
+    func testFormatForcedMarkedListJoinsWithNewlines() {
+        XCTAssertEqual(formatForcedMarkedBundleIDList(["com.acme.Editor", "net.example.App"]),
+                       "com.acme.Editor\nnet.example.App")
+        XCTAssertEqual(formatForcedMarkedBundleIDList([]), "")
+    }
+
     // MARK: - P2: classifyComposition engine/blocklist branches
 
     func testForcedMarkedBundleIDForcesMarked() {

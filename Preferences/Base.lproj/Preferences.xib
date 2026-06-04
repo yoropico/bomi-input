@@ -684,6 +684,7 @@ PC처럼 오른쪽 커맨드 또는 옵션 키 등으로 언어 전환을 할 �
                 <outlet property="hangulForceStrictCombinationRuleButton" destination="JOz-3z-VAl" id="9Gi-l9-DbM"/>
                 <outlet property="hangulNonChoseongCombinationButton" destination="AHr-Ou-hBi" id="A1C-aF-9IN"/>
                 <outlet property="hangulWonCurrencySymbolForBackQuoteButton" destination="JYx-Sc-lao" id="5Kn-cE-sMA"/>
+                <outlet property="inlineSettingsStackView" destination="kLe-bm-FOO" id="Bmi-i1-St0"/>
                 <outlet property="inputModeEnglishShortcutView" destination="fCD-Cp-FQV" id="i8N-tR-KEH"/>
                 <outlet property="inputModeExchangeShortcutView" destination="XiY-Tt-T3F" id="LGg-vP-YF5"/>
                 <outlet property="inputModeKoreanShortcutView" destination="ZkS-XC-ybl" id="YTt-oL-VCC"/>
