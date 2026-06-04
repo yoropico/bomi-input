@@ -187,6 +187,23 @@ struct LiveClientCapabilities: ClientCapabilities {
         return client.selectedRange().location != NSNotFound
     }
 
+    /// 사용자가 지정한 강제 marked 번들 식별자 목록. (Configuration에서 읽음)
+    var forcedMarkedBundleIDs: [String] {
+        Configuration.shared.inlineCompositionForcedMarkedBundleIDs
+    }
+
+    /// DKST `runningApplicationUsesChromiumTextStack:` (InputController.m:515) 포팅.
+    ///
+    /// 호스트 앱의 `.app/Contents/Frameworks`를 스캔해 Chromium/Electron
+    /// 텍스트 스택 여부를 판정한다. 입력 hot-path에서 매번 디스크를 두드리지
+    /// 않도록 결과(YES/NO 모두)를 번들 식별자별로 캐시한다.
+    func usesChromiumFrameworkTextStack() -> Bool {
+        guard let bundleID = bundleIdentifier, !bundleID.isEmpty else {
+            return false
+        }
+        return LiveClientCapabilities.chromiumTextStack(forBundleID: bundleID)
+    }
+
     /// 컨트롤러의 `textDocument` 프록시를 동적으로 얻는다.
     ///
     /// 컨트롤러를 `NSObject`로 캐스팅한 뒤 `textDocument` 셀렉터에 응답할 때에만
@@ -202,6 +219,75 @@ struct LiveClientCapabilities: ClientCapabilities {
             return nil
         }
         return controllerObject.perform(selector)?.takeUnretainedValue() as? NSObject
+    }
+
+    // MARK: - Chromium 텍스트 스택 감지 (DKST 포팅, 디스크 스캔 + 캐시)
+
+    /// 번들 식별자별 Chromium 감지 결과 캐시. IMK 이벤트는 메인 스레드에서만
+    /// 처리되므로 별도 동기화 없이 안전하다.
+    private static var chromiumDetectionCache: [String: Bool] = [:]
+
+    /// 알려진 Chromium/Electron 프레임워크 디렉터리 이름들.
+    private static let chromiumFrameworkNames: Set<String> = [
+        "Electron Framework.framework",
+        "Chromium Embedded Framework.framework",
+        "Google Chrome Framework.framework",
+        "Microsoft Edge Framework.framework",
+        "Brave Browser Framework.framework",
+        "Vivaldi Framework.framework",
+        "Opera Framework.framework",
+    ]
+
+    /// DKST `runningApplicationUsesChromiumTextStack:` 본체. 캐시 미스 시
+    /// 실행 중인 동일 번들 앱들을 열거해 이름/프레임워크를 검사하고 결과를 캐시한다.
+    private static func chromiumTextStack(forBundleID bundleID: String) -> Bool {
+        if let cached = chromiumDetectionCache[bundleID] {
+            return cached
+        }
+
+        var result = false
+        let chromiumNames: Set<String> = ["comet", "atlas", "chatgpt atlas"]
+        for app in NSRunningApplication.runningApplications(withBundleIdentifier: bundleID) {
+            let appName = (app.localizedName ?? "").lowercased()
+            let bundleName = app.bundleURL?.deletingPathExtension().lastPathComponent.lowercased() ?? ""
+            if chromiumNames.contains(appName) || chromiumNames.contains(bundleName) {
+                result = true
+                break
+            }
+            if let url = app.bundleURL, bundleUsesChromiumFrameworks(at: url) {
+                result = true
+                break
+            }
+        }
+
+        chromiumDetectionCache[bundleID] = result
+        return result
+    }
+
+    /// DKST `applicationBundleUsesChromiumTextStack:` 포팅. `.app` 번들의
+    /// `Contents/Frameworks`에 Chromium/Electron 프레임워크가 있는지 검사한다.
+    private static func bundleUsesChromiumFrameworks(at bundleURL: URL) -> Bool {
+        let frameworksURL = bundleURL.appendingPathComponent("Contents/Frameworks", isDirectory: true)
+        let fileManager = FileManager.default
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: frameworksURL.path, isDirectory: &isDirectory),
+              isDirectory.boolValue,
+              let names = try? fileManager.contentsOfDirectory(atPath: frameworksURL.path)
+        else {
+            return false
+        }
+
+        for name in names {
+            if chromiumFrameworkNames.contains(name) {
+                return true
+            }
+            if name.range(of: "Chromium", options: .caseInsensitive) != nil
+                || name.range(of: "Electron", options: .caseInsensitive) != nil
+            {
+                return true
+            }
+        }
+        return false
     }
 }
 

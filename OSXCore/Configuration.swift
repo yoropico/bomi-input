@@ -50,6 +50,8 @@ enum ConfigurationName {
     public static let inlineCompositionEnabled = "InlineCompositionEnabled"
     /// 인라인 직접 입력 기능 (DKST 방식 이식, MIT) 시 모든 클라이언트에서 marked-text 강제.
     public static let inlineCompositionAlwaysMarked = "InlineCompositionAlwaysMarked"
+    /// 인라인 직접 입력 기능에서 marked-text를 강제할 사용자 지정 번들 식별자 목록.
+    public static let inlineCompositionForcedMarkedBundleIDs = "InlineCompositionForcedMarkedBundleIDs"
 
     /// 업데이트 알림 받기
     public static let updateNotification = "UpdateNotification"
@@ -112,6 +114,7 @@ public class Configuration: UserDefaults {
 
             ConfigurationName.inlineCompositionEnabled: false,
             ConfigurationName.inlineCompositionAlwaysMarked: false,
+            ConfigurationName.inlineCompositionForcedMarkedBundleIDs: [String](),
 
             ConfigurationName.updateNotification: true,
             ConfigurationName.updateNotificationExperimental: false,
@@ -308,6 +311,17 @@ public class Configuration: UserDefaults {
         }
         set {
             set(newValue, forKey: ConfigurationName.inlineCompositionAlwaysMarked)
+        }
+    }
+
+    /// 인라인 직접 입력 기능에서 marked-text를 강제할 사용자 지정 번들 식별자 목록.
+    /// 엔진 휴리스틱(WebKit/Chromium)보다 우선하는 사용자 명시 override다.
+    public var inlineCompositionForcedMarkedBundleIDs: [String] {
+        get {
+            stringArray(forKey: ConfigurationName.inlineCompositionForcedMarkedBundleIDs) ?? []
+        }
+        set {
+            set(newValue, forKey: ConfigurationName.inlineCompositionForcedMarkedBundleIDs)
         }
     }
 

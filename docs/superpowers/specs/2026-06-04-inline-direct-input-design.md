@@ -1,7 +1,8 @@
 # Inline direct-input (no-underline composition) — design
 
 Date: 2026-06-04. Target: bomi-input (macOS IME, libhangul + InputMethodKit).
-Status: approved design, pre-implementation.
+Status: P1 (core) + P2 (engines + config) implemented (2026-06-05), behind the
+default-FALSE `inlineCompositionEnabled` kill-switch. P3 (edges + UI) pending.
 
 ## Goal
 
@@ -136,13 +137,19 @@ toggles later.
 
 ## Implementation phases
 
-- **P1 (core)**: policy decision function (+ unit tests) for native Cocoa
-  (showsComposingTextAsMarkedText + selectedRange + default), inline render at
+- **P1 (core)** — DONE (ecd254f): policy decision function (+ unit tests) for native
+  Cocoa (showsComposingTextAsMarkedText + selectedRange + default), inline render at
   `updateComposition`, commit/compose mapping, marked-text fallback, master default.
-- **P2 (engines + config)**: WebKit/Chromium detection (+ framework scan cache),
-  user force-marked blocklist defaults-key, global always-marked toggle.
-- **P3 (edges + UI)**: first-roman-leak repair, eager-sync avoidance, full state
-  reset hardening, Preferences UI for toggles + blocklist editor.
+- **P2 (engines + config)** — DONE (2026-06-05): WebKit/Chromium detection (+ framework
+  scan cache), user force-marked blocklist defaults-key, global always-marked toggle.
+  Pure bundle-ID classifiers (`bundleIdentifierUsesWebKitTextStack` / `…ChromiumMarkedTextPolicy`
+  / `…MatchesForcedMarkedList`) + the framework scan behind `LiveClientCapabilities`
+  (`usesChromiumFrameworkTextStack`, cached by bundle ID). Config key
+  `inlineCompositionForcedMarkedBundleIDs`. classifyComposition chain steps 3–5 wired.
+  Unit tests cover every branch (OSXTests 65/1-baseline). Defaults-key driven; UI still P3.
+- **P3 (edges + UI)** — pending: first-roman-leak repair, eager-sync avoidance, full state
+  reset hardening, Preferences UI for toggles + blocklist editor. Then flip the kill-switch
+  ON + run the on-device manual matrix.
 
 ## Attribution
 

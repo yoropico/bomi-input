@@ -17,18 +17,30 @@ private struct StubCaps: ClientCapabilities {
     let showsMarked: Bool?
     let selectableRange: Bool
     let bundleID: String?
+    let forcedMarked: [String]
+    let chromiumFramework: Bool
 
-    init(alwaysMarked: Bool, showsMarked: Bool?, selectableRange: Bool, bundleID: String? = nil) {
+    init(alwaysMarked: Bool,
+         showsMarked: Bool?,
+         selectableRange: Bool,
+         bundleID: String? = nil,
+         forcedMarked: [String] = [],
+         chromiumFramework: Bool = false)
+    {
         self.alwaysMarked = alwaysMarked
         self.showsMarked = showsMarked
         self.selectableRange = selectableRange
         self.bundleID = bundleID
+        self.forcedMarked = forcedMarked
+        self.chromiumFramework = chromiumFramework
     }
 
     var alwaysMarkedGlobal: Bool { alwaysMarked }
     func showsComposingTextAsMarkedText() -> Bool? { showsMarked }
     func selectedRangeIsQueryable() -> Bool { selectableRange }
     var bundleIdentifier: String? { bundleID }
+    var forcedMarkedBundleIDs: [String] { forcedMarked }
+    func usesChromiumFrameworkTextStack() -> Bool { chromiumFramework }
 }
 
 class InlineCompositionTests: XCTestCase {
@@ -55,6 +67,83 @@ class InlineCompositionTests: XCTestCase {
 
     func testUnknownShowsMarkedWithSelectableRangeReturnsInline() {
         let caps = StubCaps(alwaysMarked: false, showsMarked: nil, selectableRange: true)
+        XCTAssertEqual(classifyComposition(caps), .inline)
+    }
+
+    // MARK: - P2: pure engine/blocklist helpers (DKST port, MIT)
+
+    func testWebKitTextStackMatchesSafariAndWebKitBundles() {
+        XCTAssertTrue(bundleIdentifierUsesWebKitTextStack("com.apple.Safari"))
+        XCTAssertTrue(bundleIdentifierUsesWebKitTextStack("com.apple.WebKit.WebContent"))
+        XCTAssertTrue(bundleIdentifierUsesWebKitTextStack("com.apple.mobilesafari"))
+        XCTAssertTrue(bundleIdentifierUsesWebKitTextStack("com.apple.Safari.Helper"))
+        // prefix는 점 경계를 요구한다: "com.apple.WebKit"으로 시작해도 다음이 점이 아니면 불일치.
+        XCTAssertFalse(bundleIdentifierUsesWebKitTextStack("com.apple.WebKitten"))
+        XCTAssertFalse(bundleIdentifierUsesWebKitTextStack("com.google.Chrome"))
+        XCTAssertFalse(bundleIdentifierUsesWebKitTextStack(""))
+    }
+
+    func testChromiumMarkedPolicyMatchesKnownBrowsers() {
+        XCTAssertTrue(bundleIdentifierUsesChromiumMarkedTextPolicy("com.google.Chrome"))
+        XCTAssertTrue(bundleIdentifierUsesChromiumMarkedTextPolicy("com.google.Chrome.canary"))
+        XCTAssertTrue(bundleIdentifierUsesChromiumMarkedTextPolicy("com.microsoft.edgemac"))
+        XCTAssertTrue(bundleIdentifierUsesChromiumMarkedTextPolicy("com.brave.Browser"))
+        XCTAssertTrue(bundleIdentifierUsesChromiumMarkedTextPolicy("company.thebrowser.Browser")) // Arc
+        XCTAssertTrue(bundleIdentifierUsesChromiumMarkedTextPolicy("com.naver.Whale"))
+        XCTAssertTrue(bundleIdentifierUsesChromiumMarkedTextPolicy("org.chromium.Chromium"))
+        XCTAssertFalse(bundleIdentifierUsesChromiumMarkedTextPolicy("com.apple.Safari"))
+        XCTAssertFalse(bundleIdentifierUsesChromiumMarkedTextPolicy(""))
+    }
+
+    func testForcedMarkedListMatchesCaseInsensitively() {
+        let list = ["com.acme.Editor", "net.example.App"]
+        XCTAssertTrue(bundleIdentifierMatchesForcedMarkedList("com.acme.Editor", list))
+        XCTAssertTrue(bundleIdentifierMatchesForcedMarkedList("com.acme.editor", list)) // 대소문자 무시
+        XCTAssertFalse(bundleIdentifierMatchesForcedMarkedList("com.acme.Other", list))
+        XCTAssertFalse(bundleIdentifierMatchesForcedMarkedList("com.acme.Editor", []))
+        XCTAssertFalse(bundleIdentifierMatchesForcedMarkedList("", list))
+    }
+
+    // MARK: - P2: classifyComposition engine/blocklist branches
+
+    func testForcedMarkedBundleIDForcesMarked() {
+        // showsMarked nil + selectable true이면 기본은 inline이지만, 강제 목록에 있으면 marked.
+        let caps = StubCaps(alwaysMarked: false, showsMarked: nil, selectableRange: true,
+                            bundleID: "com.acme.Editor", forcedMarked: ["com.acme.Editor"])
+        XCTAssertEqual(classifyComposition(caps), .marked)
+    }
+
+    func testForcedMarkedOverridesWebKitInline() {
+        // WebKit 번들이라도 사용자 강제 목록에 있으면 marked가 이긴다(강제 목록이 WebKit보다 우선).
+        let caps = StubCaps(alwaysMarked: false, showsMarked: nil, selectableRange: true,
+                            bundleID: "com.apple.Safari", forcedMarked: ["com.apple.Safari"])
+        XCTAssertEqual(classifyComposition(caps), .marked)
+    }
+
+    func testWebKitBundleReturnsInlineEvenWhenSelectedRangeUnqueryable() {
+        // selectable=false면 기본 안전값은 marked지만, WebKit 판정이 그 앞 단계라 inline.
+        let caps = StubCaps(alwaysMarked: false, showsMarked: nil, selectableRange: false,
+                            bundleID: "com.apple.Safari")
+        XCTAssertEqual(classifyComposition(caps), .inline)
+    }
+
+    func testChromiumBundleReturnsMarked() {
+        let caps = StubCaps(alwaysMarked: false, showsMarked: nil, selectableRange: true,
+                            bundleID: "com.google.Chrome")
+        XCTAssertEqual(classifyComposition(caps), .marked)
+    }
+
+    func testChromiumFrameworkScanReturnsMarked() {
+        // 번들 prefix 목록에 없는 Electron 앱이라도 프레임워크 스캔이 true면 marked.
+        let caps = StubCaps(alwaysMarked: false, showsMarked: nil, selectableRange: true,
+                            bundleID: "com.unknown.electronapp", chromiumFramework: true)
+        XCTAssertEqual(classifyComposition(caps), .marked)
+    }
+
+    func testAppleMarkedSignalBeatsChromiumPolicy() {
+        // Apple 신호(showsMarked=false=inline)는 Chromium 판정보다 우선한다(체인 2단계).
+        let caps = StubCaps(alwaysMarked: false, showsMarked: false, selectableRange: true,
+                            bundleID: "com.google.Chrome")
         XCTAssertEqual(classifyComposition(caps), .inline)
     }
 }

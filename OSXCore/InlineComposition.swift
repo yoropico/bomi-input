@@ -45,47 +45,111 @@ public protocol ClientCapabilities {
     func selectedRangeIsQueryable() -> Bool
 
     /// 클라이언트(호스트 앱)의 번들 식별자.
-    ///
-    /// - Note: P1에서는 선언만 하고, P2(WebKit/Chromium/blocklist 판정)에서
-    ///   소비한다.
     var bundleIdentifier: String? { get }
+
+    /// 사용자가 "강제 marked text"로 지정한 번들 식별자 목록.
+    ///
+    /// 엔진 휴리스틱(WebKit/Chromium)보다 우선하는 사용자 명시 override다.
+    /// (DKST `_forcedMarkedTextBundleIDs` 대응)
+    var forcedMarkedBundleIDs: [String] { get }
+
+    /// 호스트 앱이 Chromium/Electron 텍스트 스택을 쓰는지, `.app` 번들의
+    /// `Contents/Frameworks`를 스캔해 판정한다(side-effecting; 결과는 캐시).
+    ///
+    /// 번들 식별자 prefix 목록(`bundleIdentifierUsesChromiumMarkedTextPolicy`)에
+    /// 잡히지 않는 Electron 앱을 잡기 위한 폴백이다.
+    /// (DKST `runningApplicationUsesChromiumTextStack:` 대응)
+    func usesChromiumFrameworkTextStack() -> Bool
 }
 
-// MARK: - P2 hooks (RESERVED — DO NOT IMPLEMENT IN P1)
-//
-// 아래 항목들은 P2에서 결정 체인(`classifyComposition`)에 끼워 넣을 자리를
-// 미리 예약해 둔 것이다. P1에서는 구현하지 않는다.
-//
-//  1. Blocklist match
-//     `bundleIdentifier`가 알려진 비호환 앱 목록과 일치하면 강제로
-//     특정 모드로 떨어뜨린다. (체인 최상단 근처에 위치)
-//
-//  2. WebKit → inline
-//     WebKit 기반 호스트로 식별되면 인라인 합성을 우선한다.
-//
-//  3. Chromium → marked
-//     Chromium 기반 호스트로 식별되면 marked text를 우선한다.
-//
-// 위 훅들은 모두 `bundleIdentifier`(및 P2에서 추가될 분류 정보)에 의존하며,
-// `classifyComposition`(Step 3)이 도입되는 같은 파일의 결정 체인 안에서
-// 호출될 예정이다.
+public extension ClientCapabilities {
+    /// 기본값: 강제 marked 목록 없음. (P1 스텁/구형 conformer 호환)
+    var forcedMarkedBundleIDs: [String] { [] }
+
+    /// 기본값: 프레임워크 스캔 미수행. (P1 스텁/구형 conformer 호환)
+    func usesChromiumFrameworkTextStack() -> Bool { false }
+}
+
+// MARK: - Bundle-identifier engine classification (pure, DKST port)
+
+/// 번들 식별자가 주어진 prefix 중 하나와 "정확히 일치"하거나 `prefix + "."`로
+/// 시작하는지 판정한다. 점 경계를 요구하므로 `com.apple.WebKitten`처럼 우연히
+/// prefix로 시작하는 식별자는 제외된다. (DKST의 `isEqualToString:`/`hasPrefix:` 쌍)
+private func bundleIdentifier(_ bundleID: String, matchesAnyPrefix prefixes: [String]) -> Bool {
+    guard !bundleID.isEmpty else {
+        return false
+    }
+    for prefix in prefixes {
+        if bundleID == prefix || bundleID.hasPrefix(prefix + ".") {
+            return true
+        }
+    }
+    return false
+}
+
+/// 주어진 번들 식별자가 WebKit 텍스트 스택(Safari/WebKit)을 쓰는지 판정한다.
+///
+/// DKST `bundleIdentifierUsesWebKitTextStack:` (InputController.m:401) 포팅.
+public func bundleIdentifierUsesWebKitTextStack(_ bundleID: String) -> Bool {
+    bundleIdentifier(bundleID, matchesAnyPrefix: [
+        "com.apple.Safari",
+        "com.apple.WebKit",
+        "com.apple.mobilesafari",
+    ])
+}
+
+/// 주어진 번들 식별자가 Chromium 계열(marked-text 정책 대상)인지 판정한다.
+///
+/// DKST `bundleIdentifierUsesChromiumMarkedTextPolicy:` (InputController.m:430) 포팅.
+public func bundleIdentifierUsesChromiumMarkedTextPolicy(_ bundleID: String) -> Bool {
+    bundleIdentifier(bundleID, matchesAnyPrefix: [
+        "org.chromium.Chromium",
+        "com.google.Chrome",
+        "com.google.Chrome.canary",
+        "com.microsoft.edgemac",
+        "com.brave.Browser",
+        "com.vivaldi.Vivaldi",
+        "com.operasoftware.Opera",
+        "com.naver.Whale",
+        "company.thebrowser.Browser", // Arc
+        "ai.perplexity.comet",
+        "com.perplexity.Comet",
+        "com.perplexity.comet",
+        "com.openai.atlas",
+        "com.openai.Atlas",
+        "com.openai.chatgpt.atlas",
+    ])
+}
+
+/// 번들 식별자가 사용자 강제 marked 목록에 (대소문자 무시) 포함되는지 판정한다.
+///
+/// macOS 번들 식별자는 대소문자를 구분하지 않으므로 비교도 대소문자 무시로 한다.
+public func bundleIdentifierMatchesForcedMarkedList(_ bundleID: String, _ list: [String]) -> Bool {
+    guard !bundleID.isEmpty else {
+        return false
+    }
+    let needle = bundleID.lowercased()
+    return list.contains { $0.lowercased() == needle }
+}
 
 // MARK: - Composition mode policy
 
 /// 주어진 클라이언트 정보(`caps`)만으로 합성 표시 방식을 결정하는 순수 함수.
 ///
 /// DKST의 `-[InputController shouldUseMarkedTextForClient:]`
-/// (Sources/InputController.m:840)을 P1 범위로 포팅한 것이다.
+/// (Sources/InputController.m:840)을 포팅한 것이다.
 /// IMK/AppKit에 접근하지 않으며 전역 상태(`Configuration.shared` 등)를
 /// 내부에서 읽지 않는다. 모든 입력은 `caps`로만 들어온다.
 ///
-/// 우선순위 체인(P1):
+/// 우선순위 체인:
 /// 1. `caps.alwaysMarkedGlobal`이면 → `.marked` (전역 강제).
 /// 2. `caps.showsComposingTextAsMarkedText()`가 non-nil이면 즉시 반영:
 ///    `true → .marked`, `false → .inline` (Apple 신호 우선).
-/// 3. (P2 훅 자리: blocklist → .marked, WebKit → .inline, Chromium → .marked)
-/// 4. `caps.selectedRangeIsQueryable()`가 거짓이면 → `.marked` (안전 측면).
-/// 5. 그 외 기본값 → `.inline`.
+/// 3. 사용자 강제 marked 목록에 있으면 → `.marked` (엔진 휴리스틱보다 우선).
+/// 4. WebKit 텍스트 스택이면 → `.inline`.
+/// 5. Chromium 텍스트 스택(번들 prefix 또는 프레임워크 스캔)이면 → `.marked`.
+/// 6. `caps.selectedRangeIsQueryable()`가 거짓이면 → `.marked` (안전 측면).
+/// 7. 그 외 기본값 → `.inline`.
 public func classifyComposition(_ caps: ClientCapabilities) -> CompositionMode {
     // 1. 전역 "항상 marked text" 설정.
     if caps.alwaysMarkedGlobal {
@@ -97,14 +161,36 @@ public func classifyComposition(_ caps: ClientCapabilities) -> CompositionMode {
         return showsMarked ? .marked : .inline
     }
 
-    // 3. P2 hooks gap — 여기에 다음 판정들이 순서대로 들어간다 (P1에서는 미구현):
-    //    blocklist match → .marked, WebKit → .inline, Chromium → .marked.
+    // 3. 사용자 강제 marked 목록(엔진 휴리스틱보다 우선하는 사용자 override).
+    if let bundleID = caps.bundleIdentifier,
+       bundleIdentifierMatchesForcedMarkedList(bundleID, caps.forcedMarkedBundleIDs)
+    {
+        return .marked
+    }
 
-    // 4. selectedRange를 인라인 합성에 쓸 수 없으면 안전하게 marked.
+    // 4. WebKit 텍스트 스택(Safari/WebKit) → 인라인.
+    if let bundleID = caps.bundleIdentifier,
+       bundleIdentifierUsesWebKitTextStack(bundleID)
+    {
+        return .inline
+    }
+
+    // 5. Chromium 텍스트 스택 → marked. 번들 prefix 목록을 먼저 보고,
+    //    잡히지 않으면 `.app` 프레임워크 스캔(side-effecting)으로 폴백한다.
+    if let bundleID = caps.bundleIdentifier,
+       bundleIdentifierUsesChromiumMarkedTextPolicy(bundleID)
+    {
+        return .marked
+    }
+    if caps.usesChromiumFrameworkTextStack() {
+        return .marked
+    }
+
+    // 6. selectedRange를 인라인 합성에 쓸 수 없으면 안전하게 marked.
     if !caps.selectedRangeIsQueryable() {
         return .marked
     }
 
-    // 5. 기본값: 인라인 합성.
+    // 7. 기본값: 인라인 합성.
     return .inline
 }
