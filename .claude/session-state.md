@@ -1,17 +1,21 @@
 ## Session state (devmode)
-- Updated: 2026-06-05. **Inline hardening PHASE 1 done + PUSHED, PAUSED here (user: "1차 여기까지,
-  2차=침습적 방법").** Inline currently **OFF** (`InlineCompositionEnabled=0` in sandbox container) =
-  stable marked everywhere. git: **origin/main == `6949e8c`** (phase-1 all pushed: 2e9cea1 directRange-
-  preserve+mock fidelity, 3e3bee6 ① fail-safe, aee41d6/6949e8c docs). Installed build = 3e3bee6.
-  Build/sign/install + git rules + sandbox-defaults gotcha in CLAUDE.md. (Re-check `git log` on resume.)
-- **Inline status: PHASE 1 fixes in, dogfood-paused.** ① fail-safe (`3e3bee6`, VERIFIED Finder: commit dup
-  gone) + terminals→marked (`33a2be2`) + Chromium/WebKit (P2). Root cause of all inline bugs = tracked
-  `directRange` drifts vs real document. **STILL OPEN (phase 2)**: MS Word still dups (its engine passes
-  attributedSubstring but IGNORES insertText replacementRange → appends; ① only catches validation-FAILURE
-  so it misses Word); ② cursor-move invalidation (Word move-then-delete jump) not done; ③ capability gate not done.
-- **PHASE 2 = invasive probe** (spec "PHASE 2" section): at composition start, insertText a probe char +
-  read-back + delete to detect capability BEFORE any visible composition (glitch-free ③), then ② cursor-move,
-  then re-enable. Post-insert auto-detect works but leaves a 1-time artifact; invasive probe avoids it.
+- Updated: 2026-06-05. **Inline PHASE 2 (③ non-invasive gate + ② cursor-move) IMPLEMENTED + committed LOCAL
+  `2a34871`, behind kill-switch (inline still OFF/default-FALSE).** Built via devmode TEAM mode (planner step
+  skipped — used the committed writing-plans plan; implementer→tester→reviewer). OSXTests **PASS** (82 run, 1
+  known IMK-env baseline `testIPMDServerClientWrapper`), reviewer **APPROVE**. NOT installed/dogfooded yet.
+  git: local **ahead of origin/main(`6949e8c`)** by 555e081 + 2217d5a(spec) + 9abab73(plan) + 2a34871(feat) —
+  UNPUSHED (push needs per-instance auth). Build/sign/install + git rules + sandbox-defaults gotcha in CLAUDE.md.
+- **PHASE 2 decision: invasive probe REJECTED** (data-loss on selection / reactive-field side effects / undo
+  pollution / clean repair impossible in true append-only). Chose **non-invasive 2-layer**: A = pure seed list
+  `bundleIdentifierUsesAppendOnlyTextStack` (Office/HWP → marked from key 1, zero artifact); B = runtime learning
+  in renderInline (caret-landing validation after a real replace → on mismatch demote client to marked + record
+  bundle id in session `learnedAppendOnlyCache` (queried via `ClientCapabilities.learnedAppendOnly`) + best-effort
+  delete leak + marked re-render). ② = `expectedCaret` tracked; stale `directRange` dropped on cursor move, gated
+  to `action == .none` so the ① commit fail-safe survives. Spec/plan: docs/superpowers/{specs,plans}/…inline….
+- **NEXT for inline**: install build → flip UI switch ON → on-device matrix (Word/Excel/한글→marked seed;
+  Notes/Safari/Slack→inline; unknown append app→B learns) → then decide flip default ON. Tiny non-blocking
+  follow-up (reviewer note): `commitCompositionEvent` inline branch clears directRange but not expectedCaret
+  (harmless — ② guard requires directRange!=nil; renderInline always re-sets it). Verify seed bundle IDs on-device.
 - **OPEN (BCT-side, NOT bomi)**: BCT garbled PREEDIT in marked mode ("?<0095><009c>") — BCT preedit handling;
   bomi marked path is standard. `[ime-diag]` logs in BCT `src/app/event_loop/ime.rs` → ~/.config/bomi-claude-terminal/bct.log.
 - **OPEN (BCT-side, NOT bomi)**: BCT garbled PREEDIT in marked mode ("?<0095><009c>") — BCT preedit handling;
