@@ -197,10 +197,12 @@ inline is now off so it's dormant).
 2. **cursor-move invalidation**: remember last `selectedRange`; if the cursor moved unexpectedly
    (arrows/click) between inputs, drop `directRange`. (DKST `rememberSelectedRangeForClient` +
    `resetCompositionState` — the deferred P3 hardening; fixes Word move-then-delete jump.)
-3. **capability-probe marked fallback, NOT a blocklist**: at composition start, require selectedRange
-   queryable AND a just-inserted-char attributedSubstring round-trip AND showsComposingTextAsMarkedText≠true;
-   any failure → marked. Inverts today's "inline-by-default + blocklist (whack-a-mole)" into
-   "inline only where the client provably supports it" (auto-handles Word/terminals/non-standard apps).
+3. **capability gate, NOT a hand-maintained blocklist**: prove the client actually honours an inline
+   replace, else fall back to marked — auto-handling Word/terminals/non-standard apps. The MECHANISM is
+   resolved in the PHASE 2 section below: a static seed list (known append-only apps → marked from
+   keystroke 1) plus NON-INVASIVE post-write learning (validate the first real replace landed via caret
+   check; on violation, demote the client to marked and remember it). The invasive composition-start
+   probe once sketched here is REJECTED — see PHASE 2 for why.
 
 Realistic recommendation: ③(strong capability gate) + ①(validate-or-bail) is the highest-leverage,
 lowest-risk path; ② on top. Residual app-compat risk always remains (why DKST keeps a big override
@@ -218,19 +220,73 @@ just shipping the rock-solid marked default.
   validation but IGNORES insertText's replacementRange (appends), so ① (which only triggers on validation
   FAILURE) can't catch it; ② (cursor-move invalidation) not implemented; ③ not implemented.
 
-### PHASE 2 (next — capability detection done right, glitch-free via an INVASIVE probe)
-The post-insert auto-detect (verify caret landed at replaceRange.location+len; else → marked) catches
-"ignores replacementRange" apps like Word automatically WITHOUT a list, but only AFTER one bad insert →
-a one-time visual artifact (orphan glyph) on the first composition in such an app.
-**Phase-2 goal: make ③ glitch-free with an INVASIVE pre-composition probe** — at composition START,
-before showing anything: insertText a probe char with a replacementRange, read it back
-(attributedSubstring) to confirm it landed where requested, then delete it (undo). Decide inline-vs-marked
-from the round-trip BEFORE any user-visible composition. "Invasive" = it momentarily writes+deletes a
-probe char in the document (risks: visible flicker, polluting undo history, side effects in reactive
-fields). Phase 2 = find a safe/cheap form of this probe (e.g., probe once per client and cache; or probe
-in a way that's invisible/undoable), then layer ② (cursor-move invalidation) on top, then re-enable inline.
-Fallback if no clean invasive probe: post-insert auto-detect + a small curated marked list (Office, etc.)
-for the common apps to avoid the first-composition artifact.
+### PHASE 2 (next — capability gate done right, NON-INVASIVE; design 2026-06-05)
+
+**Decision (2026-06-05): the invasive pre-composition probe is REJECTED.** Inserting + reading back +
+deleting a probe char before showing any composition writes a synthetic char into the user's document at
+composition start, which (a) replaces and destroys an active selection = data loss, (b) fires
+onChange/onInput in reactive fields (web/Electron chat, search, React controlled inputs) — side effects
+the later delete cannot undo, (c) pollutes undo history and risks a first-keystroke flicker. Clean repair
+in a true append-only app is impossible anyway (it ignores insertText's replacementRange, so it ignores
+the cleanup delete too), so an invasive probe buys risk without buying guaranteed cleanliness.
+
+**Chosen approach — NON-INVASIVE post-write validation + a static seed list (two-layer defense).**
+This subsumes ③ (capability gate) as post-hoc LEARNING rather than upfront classification, and extends
+① (validate-or-bail), which already lives in renderInline.
+
+- **A. Seed list (static, pure, first-line defense).** New pure classifier
+  `bundleIdentifierUsesAppendOnlyTextStack` (InlineComposition.swift), wired into `classifyComposition`
+  (after the terminal step, before the default → inline). Known apps that ignore insertText's
+  replacementRange → marked from keystroke 1 → ZERO artifact. Seed candidates (verify real bundle IDs
+  on-device): `com.microsoft.Word`/`Excel`/`Powerpoint`/`Outlook`/`onenote.mac`, Hancom 한글
+  (`com.hancom.*` / `com.haansoft.hwp`). This is what actually guarantees correctness for the apps users
+  hit.
+- **B. Runtime learning (safety net for UNKNOWN append-only apps).** In `renderInline`, ONLY after an
+  insert with a real (non-NSNotFound) replaceRange — i.e. the first replace of a composition, the
+  keystroke that exposes append-vs-replace — validate by **caret landing**: expected caret =
+  `replaceRange.location + combined.utf16len`; if `selectedRange().location` differs (an append-only app
+  leaves the old glyph and appends, so the caret is further right) → VIOLATION. On violation: clear
+  `directRange`/`directText`, set `controller.useMarkedText = true` (this session), record the bundle ID
+  in a per-bundle learned-append cache (static, session-scoped, same pattern as `chromiumDetectionCache`)
+  so future activations classify it marked, best-effort delete the leaked span via replacementRange, and
+  continue in marked mode. The FIRST keystroke (replaceRange == NSNotFound, append == correct for
+  everyone) is NOT validated. Wire a `ClientCapabilities.learnedAppendOnly() -> Bool` query
+  (LiveClientCapabilities reads the cache) as a `classifyComposition` step so the learning persists across
+  re-activations within the session.
+
+**Honest limitation.** A true append-only app ignores replacementRange for the cleanup delete too, so an
+UNKNOWN append-only app may leave a small one-time residue on its first composition before it is learned.
+Cleanliness is guaranteed by the seed list (A); runtime learning (B) is a degrade-gracefully net (learn
+once → marked forever after) — the same reason DKST keeps a large override list. Perfect retroactive
+repair is fundamentally impossible.
+
+### ② cursor-move invalidation (this phase, with the gate)
+Problem: if the user moves the caret mid-composition (arrows/click), `directText` is still at the OLD
+location so `directRangeIsCurrent` returns TRUE → the next jamo replaces at the stale spot (Word
+move-then-delete jump). Fix: remember the expected caret after each inline render
+(= `directRange.location + directRange.length`) on the controller (new state, e.g. `expectedCaret: Int?`);
+at the start of the next inline op, if `selectedRange().location != expectedCaret` the user moved → clear
+`directRange`/`directText` to RE-ANCHOR (the next insert lands fresh at the current caret; the
+already-inline text stays as correct real text). Guard sits at `renderInline` entry / before
+`inlineReplaceRange`.
+
+### Scope + re-enable (decided 2026-06-05)
+PHASE 2 ships ③ (non-invasive gate, A + B) AND ② together, all behind the unchanged default-FALSE
+`inlineCompositionEnabled` kill-switch. The user flips it ON via the Preferences UI to run the on-device
+matrix; whether to flip the DEFAULT to true is decided after that matrix passes. The learned-append cache
+is session-scoped for now (persistent via config is a possible follow-up).
+
+### Testing (PHASE 2)
+- **Unit (pure)**: `bundleIdentifierUsesAppendOnlyTextStack` per bundle ID; the `learnedAppendOnly` branch
+  in `classifyComposition` — same pattern as the existing `InlineCompositionTests`.
+- **Unit (runtime)**: NSTextView honours replacementRange so it cannot reproduce Word; add an append-only
+  fake IMK client double (ignores insertText's replacementRange) to unit-test the demote/learn path and
+  the ② re-anchor. The existing 55+ suite must stay green (regression gate).
+- **On-device matrix** (once, after enabling): Word/Excel/Hancom (seed → marked), Notes/Safari/Slack
+  (stay inline), an unknown append app (B-layer learns).
+
+Fallback if on-device shows the seed list is insufficient: widen the seed list; the runtime net already
+catches the rest.
 
 ## Attribution
 
