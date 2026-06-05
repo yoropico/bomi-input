@@ -1,8 +1,9 @@
 ## Session state (devmode)
-- Updated: 2026-06-05. **Inline hardening PHASE 1 done, PAUSED here (user: "1차 여기까지, 2차=침습적 방법").**
-  Inline currently **OFF** (`InlineCompositionEnabled=0` in sandbox container) = stable marked everywhere.
-  git: origin `55d3b5b`; **local ahead 3, UNPUSHED**: `2e9cea1` (directRange-preserve + mock fidelity),
-  `aee41d6` (docs), `3e3bee6` (① fail-safe). Build/sign/install + git rules + sandbox-defaults gotcha in CLAUDE.md.
+- Updated: 2026-06-05. **Inline hardening PHASE 1 done + PUSHED, PAUSED here (user: "1차 여기까지,
+  2차=침습적 방법").** Inline currently **OFF** (`InlineCompositionEnabled=0` in sandbox container) =
+  stable marked everywhere. git: **origin/main == `6949e8c`** (phase-1 all pushed: 2e9cea1 directRange-
+  preserve+mock fidelity, 3e3bee6 ① fail-safe, aee41d6/6949e8c docs). Installed build = 3e3bee6.
+  Build/sign/install + git rules + sandbox-defaults gotcha in CLAUDE.md. (Re-check `git log` on resume.)
 - **Inline status: PHASE 1 fixes in, dogfood-paused.** ① fail-safe (`3e3bee6`, VERIFIED Finder: commit dup
   gone) + terminals→marked (`33a2be2`) + Chromium/WebKit (P2). Root cause of all inline bugs = tracked
   `directRange` drifts vs real document. **STILL OPEN (phase 2)**: MS Word still dups (its engine passes
