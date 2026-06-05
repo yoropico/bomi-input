@@ -176,6 +176,37 @@ toggles later.
   and is fine), NOT a bomi bug (bomi's marked path is standard and works in every other app). Fix belongs in
   claude-terminal (`src/app/event_loop/ime.rs` + its preedit renderer), out of scope for bomi.
 
+## STATUS 2026-06-05 — inline DISABLED by user; needs fundamental hardening before re-enable
+
+On-device dogfooding surfaced a cascade of inline failures, all with ONE root cause:
+**the IME's tracked `directRange` drifts out of sync with the real document** (cursor moved,
+commit boundary, non-standard text engine) → it then appends / operates on the wrong location.
+Observed: commit dup "안녕"→"안녕녕" (Finder + all apps); Word cursor-jump on move-then-delete
+(stale directRange); terminals (PTY can't replace); Word custom text engine. The user turned
+inline OFF (`InlineCompositionEnabled=false`) → back to the years-stable marked path.
+
+Partial fixes landed: terminals→marked (`33a2be2`, pushed); commit-path directRange-preserve
+(`2e9cea1`, local — fixes ONE append path but Finder still dup'd via the delete/validate gap, and
+inline is now off so it's dormant).
+
+**Fundamental fix (required before re-enabling) — the deferred robustness layer DKST spends ~2,265 LOC on:**
+1. **validate-or-bail on EVERY inline op** (insert / commit / backspace): before any replace, confirm
+   `directRange` still holds the expected text via `attributedSubstring`; else recover from
+   `selectedRange`, else FALL BACK to marked — never blindly append. (bomi has `directRangeIsCurrent`
+   but not on all paths; the delete/backspace path doesn't validate at all.)
+2. **cursor-move invalidation**: remember last `selectedRange`; if the cursor moved unexpectedly
+   (arrows/click) between inputs, drop `directRange`. (DKST `rememberSelectedRangeForClient` +
+   `resetCompositionState` — the deferred P3 hardening; fixes Word move-then-delete jump.)
+3. **capability-probe marked fallback, NOT a blocklist**: at composition start, require selectedRange
+   queryable AND a just-inserted-char attributedSubstring round-trip AND showsComposingTextAsMarkedText≠true;
+   any failure → marked. Inverts today's "inline-by-default + blocklist (whack-a-mole)" into
+   "inline only where the client provably supports it" (auto-handles Word/terminals/non-standard apps).
+
+Realistic recommendation: ③(strong capability gate) + ①(validate-or-bail) is the highest-leverage,
+lowest-risk path; ② on top. Residual app-compat risk always remains (why DKST keeps a big override
+list) — so also weigh whether inline's underline-free aesthetic is worth the perpetual compat tax vs
+just shipping the rock-solid marked default.
+
 ## Attribution
 
 Port adapts logic from DKST (DINKIssTyle-IME-macOS), MIT © 2025 DINKIssTyle.

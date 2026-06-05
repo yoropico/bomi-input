@@ -1,23 +1,26 @@
 ## Session state (devmode)
-- Updated: 2026-06-05. Inline P1+P2+P3-UI + **terminals→marked fix (`33a2be2`, VERIFIED on-device —
-  dup gone with inline ON)** all committed + pushed (+ CLAUDE.md sandbox defaults-redirect gotcha `5004901`).
-  Built signed Release + installed (pid live). `main` tracks `origin/main`; re-check `git log` on resume. Only `main`.
-- **Inline IS ENABLED on-device** (InlineCompositionEnabled=true in the SANDBOX container plist; blocklist
-  empty → BCT handled by built-in terminal classifier). So terminals→marked fix is genuinely active.
-- **OPEN (BCT-side, not bomi)**: BCT shows intermittent garbled PREEDIT in marked mode ("?<0095><009c>") —
-  diagnosed BCT preedit/commit RACE (auto-commit vs IMM-commit + 100ms dedup, ime.rs:94-106) splitting
-  multibyte Hangul. BCT instrumented with `[ime-diag]` logs (codepoints+bytes) in handle_ime_preedit/commit
-  (added by BCT-side); instrumented debug build target/debug/BCT RUNNING (pid was 27555), logs →
-  ~/.config/bomi-claude-terminal/bct.log. Pending: capture a garbled instance → confirm upstream vs downstream.
+- Updated: 2026-06-05. **INLINE DISABLED by user** (`InlineCompositionEnabled=false` in sandbox container)
+  after a dogfood failure cascade → back to the years-stable MARKED path everywhere. Clean Release rebuilt
+  (debug NSLog removed) + reinstalled (pid live), inline OFF confirmed. git: origin `55d3b5b`; **local ahead 1
+  (`2e9cea1`, dormant)**. Built/sign/install + git rules + sandbox defaults gotcha in CLAUDE.md.
+- **Inline status: shelved.** P1+P2+P3-UI + terminals→marked (`33a2be2`) all pushed. Dogfooding found inline
+  fails broadly — ONE root cause: tracked `directRange` drifts out of sync with the real document. Symptoms:
+  commit dup "안녕"→"안녕녕" (Finder + all apps, space/enter); Word cursor-jump on move-then-delete (stale
+  directRange); terminals (PTY); Word custom engine. `2e9cea1` fixed ONE commit append-path + a mock infidelity
+  (MockInputController.cancelComposition was missing `directRange=nil`) but Finder still dup'd via the
+  delete/validate gap. **Fundamental fix written in the spec** (validate-or-bail everywhere / cursor-move
+  invalidation / capability-probe→marked). Re-enabling inline REQUIRES that hardening (or drop inline).
+- **OPEN (BCT-side, NOT bomi)**: BCT garbled PREEDIT in marked mode ("?<0095><009c>") — BCT preedit handling;
+  bomi marked path is standard. `[ime-diag]` logs in BCT `src/app/event_loop/ime.rs` → ~/.config/bomi-claude-terminal/bct.log.
 - Project: **bomi-input** (macOS IME, rebranded from Gureum). Durable build/sign/install commands,
   signing identity, git hazards, and the xib-module gotcha live in **CLAUDE.md — read it on resume.**
 
 ### DIAGNOSIS — where things stand
 - The bomi-input rebrand is **functional and shipped**. Korean input works. UI is fully de-Gureum'd.
-- **DKST inline direct-input** is at **P1 + P2 + P3-UI done, still DORMANT** behind the default-FALSE
-  kill-switch `inlineCompositionEnabled`. P1 (ecd254f) + P2 (3b36d95) + **P3 UI (5102d16) all pushed**.
-  The settings pane now exposes the master toggle, so the **next on-device step is: open
-  환경설정 → "인라인 직접 입력 (실험적)" → enable → dogfood** (P3 hot-path hardening deferred by decision).
+- **DKST inline direct-input** — P1+P2+P3-UI+terminal-fix DONE but **SHELVED (disabled)**: dogfooding
+  proved it's not robust (directRange-drift cascade, see top). Re-enabling needs the fundamental hardening
+  documented in the spec STATUS section (validate-or-bail / cursor-move invalidation / capability-probe→marked),
+  or a decision to drop inline. Marked mode (default) is stable.
   No other DKST feature (Shift+jamo, user dictionary) is started.
 
 ### DONE & SHIPPED (origin/main == a14dc5d)
@@ -68,19 +71,19 @@
   Return left it stale → next Hangul syllable-break commit fired a phantom \r). Fix: reset on every raw
   keyDown + immediate \r at commit (drop the 20ms timer). Needs a release build/install for daily use.
 
-### DOGFOOD STATUS (inline ON)
-- BCT terminal: inline→LAST-WORD DUP on commit → FIXED by terminals→marked (33a2be2, verified on-device).
-- BCT then shows garbled PREEDIT in marked mode ("?<0095><009c>긐" = U+FFFD + C1 bytes = byte/char-sliced
-  UTF-8). Diagnosed BCT-side preedit RENDER bug (NOT bomi — marked path is standard, works elsewhere; BCT
-  commit path writes bytes to PTY fine). Confirm with Apple 2벌식 in BCT. Fix in claude-terminal repo
-  (src/app/event_loop/ime.rs + preedit renderer char-indexing), out of scope for bomi.
+### DOGFOOD RESULT (inline now OFF)
+- Inline failed broadly (directRange-drift): commit dup "안녕→안녕녕" (Finder + all apps); Word move-then-
+  delete cursor jump; terminals; Word custom engine. User DISABLED inline → marked stable. Re-enable needs
+  the fundamental hardening (spec STATUS 2026-06-05 section): ①validate-or-bail ②cursor-move invalidation
+  ③capability-probe→marked. `2e9cea1` (local) = partial commit-dup fix, dormant.
 
 ### NEXT (pick one)
-- Push local commits (ahead 2: 33a2be2 + 72b8366; needs fresh per-instance auth).
-- Continue dogfood in NON-terminal apps (메모/Slack/Mail/Notion/Xcode/Safari) — verify inline is
-  underline-free + correct there.
-- Fix BCT preedit renderer (separate repo: claude-terminal).
-- Shift+jamo custom output. / User custom dictionary.
+- **Inline fundamental hardening** (only if pursuing inline) — implement spec STATUS ①②③, then re-enable.
+  Else: drop inline (marked is the stable default) — could revert/retire the inline code later.
+- Push `2e9cea1` (local ahead 1; or hold until inline hardening lands).
+- **Shift+jamo → custom output** (⬜ not started) — independent, no hot-path risk; good next feature.
+- **User custom dictionary** (⬜ not started).
+- BCT preedit garbled-marked bug — separate repo (claude-terminal), out of scope for bomi.
 
 ### Notes
 - Removing input modes: on-device, the 4 vanish from the input-source picker; if previously added, a
