@@ -1,6 +1,6 @@
 ## Session state (devmode)
-- Updated: 2026-06-05. **Inline P1+P2+P3-UI all committed + pushed** (latest feature `5102d16`; devmode
-  tracking follows). Built signed Release + **installed** to /Library/Input Methods (pid live).
+- Updated: 2026-06-05. Inline P1+P2+P3-UI pushed (`5102d16`). **Dogfood fix: terminals→marked (`33a2be2`)
+  committed LOCAL — local ahead 2, UNPUSHED** (33a2be2 + devmode 72b8366). Built signed Release + installed.
   `main` tracks `origin/main`; re-check `git log`/`git status` on resume. Only `main`.
 - Project: **bomi-input** (macOS IME, rebranded from Gureum). Durable build/sign/install commands,
   signing identity, git hazards, and the xib-module gotcha live in **CLAUDE.md — read it on resume.**
@@ -61,12 +61,19 @@
   Return left it stale → next Hangul syllable-break commit fired a phantom \r). Fix: reset on every raw
   keyDown + immediate \r at commit (drop the 20ms timer). Needs a release build/install for daily use.
 
+### DOGFOOD STATUS (inline ON)
+- BCT terminal: inline→LAST-WORD DUP on commit → FIXED by terminals→marked (33a2be2, verified on-device).
+- BCT then shows garbled PREEDIT in marked mode ("?<0095><009c>긐" = U+FFFD + C1 bytes = byte/char-sliced
+  UTF-8). Diagnosed BCT-side preedit RENDER bug (NOT bomi — marked path is standard, works elsewhere; BCT
+  commit path writes bytes to PTY fine). Confirm with Apple 2벌식 in BCT. Fix in claude-terminal repo
+  (src/app/event_loop/ime.rs + preedit renderer char-indexing), out of scope for bomi.
+
 ### NEXT (pick one)
-- **Dogfood inline**: 환경설정 → "인라인 직접 입력 (실험적)" → enable → run the on-device app matrix
-  (메모/Slack/Mail/Notion/Xcode/VS Code/Safari/Chrome/Terminal). Only port P3 hot-path hardening
-  (first-roman-leak, eager-sync) if real problems appear.
-- Shift+jamo custom output.
-- User custom dictionary.
+- Push local commits (ahead 2: 33a2be2 + 72b8366; needs fresh per-instance auth).
+- Continue dogfood in NON-terminal apps (메모/Slack/Mail/Notion/Xcode/Safari) — verify inline is
+  underline-free + correct there.
+- Fix BCT preedit renderer (separate repo: claude-terminal).
+- Shift+jamo custom output. / User custom dictionary.
 
 ### Notes
 - Removing input modes: on-device, the 4 vanish from the input-source picker; if previously added, a
