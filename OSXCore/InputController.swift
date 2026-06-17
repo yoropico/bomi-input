@@ -381,34 +381,31 @@ public extension InputController { // IMKServerInputHandleEvent
             }
 
             // 우측 토글 키(한/영) 감지.
-            // 전역 IOHIDManager 모니터(IOKitty)는 다른 프로세스가 켠 secure input이
-            // 입력 모니터링을 차단하면 키를 놓친다(한글은 입력되는데 한/영 전환만
-            // 간헐적으로 먹통 — 다른 곳 클릭하면 복구되는 증상). 그래서 IME 자신이
-            // 받는 이 flagsChanged 이벤트의 device-dependent 비트로 먼저 판정하고,
-            // IOKitty 경로는 device 비트가 전달되지 않는 환경용 폴백으로만 둔다.
+            // 좌/우 모디파이어를 구분할 신호 중 IME에 닿는 건 flagsChanged의 keyCode 뿐이다:
+            //   · 전역 IOHIDManager(IOKitty)는 다른 프로세스가 켠 Secure Event Input에 차단된다.
+            //   · device-dependent 모디파이어 비트는 NSEvent에 실리지 않는다(on-device 확인:
+            //     우측 Command를 눌러도 modifierFlags엔 device-independent Command 0x100000만).
+            //   · 반면 keyCode는 Secure Event Input 하에서도 IME에 전달된다(on-device 확인:
+            //     secure=true, 터미널/비-터미널 모두 우측 Command가 keyCode=54로 도착).
+            // 그래서 keyCode로 우측 토글 키를 감지한다. IOKitty는 keyCode가 안 오는 환경 폴백.
             let toggleUsage = Configuration.shared.rightToggleKey
-            let toggleMask = deviceModifierMask(forKeyboardUsage: toggleUsage)
-            let toggleKeyInvolved = toggleMask != 0 && (changed.rawValue & toggleMask) != 0
-            if toggleKeyInvolved {
-                // 이 경로가 권위를 가지므로, IOKitty가 뒤늦게 세팅한 플래그가
-                // 다음 이벤트에서 중복 토글을 일으키지 않도록 소거한다.
-                let iokitHadFlag = InputMethodServer.shared.io?.resolveRightKeyPressed() == true
-                if rightToggleKeyDidPress(changed: changed.rawValue,
-                                          current: event.modifierFlags.rawValue,
-                                          toggleKeyUsage: toggleUsage)
+            if let toggleVK = toggleKeyVirtualKeyCode(forUsage: toggleUsage), Int(event.keyCode) == toggleVK {
+                // 이 keyCode 경로가 우측 토글 키를 권위적으로 처리한다. IOKitty가 (secure가
+                // 아닐 때) 세팅한 플래그는 다음 이벤트에서의 중복 토글을 막기 위해 소거한다.
+                _ = InputMethodServer.shared.io?.resolveRightKeyPressed()
+                if rightToggleKeyPressedByKeyCode(eventKeyCode: Int(event.keyCode),
+                                                  changed: changed.rawValue,
+                                                  current: event.modifierFlags.rawValue,
+                                                  toggleKeyUsage: toggleUsage)
                 {
-                    if !iokitHadFlag {
-                        // 진단: 예전이라면 IOKitty가 키를 못 잡아 먹통이었을 순간을
-                        // device-flag 경로가 살렸음을 기록한다(저빈도, 추후 제거 가능).
-                        NSLog("bomi-input: right toggle handled via device flags while IOKitty had no event (secure input?)")
-                    }
                     let result = receiver.input(event: .changeLayout(.toggleByRightKey, true), client: client)
-                    dlog(DEBUG_IOKIT_EVENT, "controller detected right toggle key via device flags")
+                    dlog(DEBUG_IOKIT_EVENT, "controller detected right toggle key via keyCode")
                     return result.processed
                 }
                 return false
             }
 
+            // 폴백: keyCode가 전달되지 않는 환경을 위한 기존 IOKitty 경로.
             if InputMethodServer.shared.io?.resolveRightKeyPressed() == true {
                 let result = receiver.input(event: .changeLayout(.toggleByRightKey, true), client: client)
                 dlog(DEBUG_IOKIT_EVENT, "controller detected right key (iokit fallback)")
