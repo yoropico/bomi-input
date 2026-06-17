@@ -1,5 +1,18 @@
 ## Session state (devmode)
-- **2026-06-18 — Toggle bug = macOS Secure Event Input (DEFINITIVE), device-flag fix only partial; version display fixed.**
+- **2026-06-18 (latest) — secure-input 한/영 토글 REAL FIX shipped + committed `db07625`: detect via flagsChanged keyCode.**
+  Rigorous on-device diag (fresh-pid-verified builds) found: device-dependent left/right modifier BITS are NOT
+  delivered to the IME (only device-independent 0x100000) → the prior device-bit fix was INERT (toggle always rode
+  the IOKitty fallback). BUT `event.keyCode` (right Cmd=54) IS delivered under Secure Event Input (verified secure=true
+  in Terminal+TextEdit) → so the earlier "bomi gets zero events under secure → unfixable" was a STALE-BUILD artifact,
+  refuted. Fix replaces deviceModifierMask/rightToggleKeyDidPress with toggleKeyVirtualKeyCode/rightToggleKeyPressedByKeyCode
+  (keyCode-based); user confirmed toggle now works under secure. ~1s post-switch delay = macOS selectMode switching
+  bomi's SEPARATE Hangul/Roman input sources (timing diag: bomi processes in <1ms; pre-existing, NOT this fix; user
+  accepted). Clean Release 1.15.1 installed (diag reverted; verified). Tests 94/1-baseline. Memory
+  [[secure-input-toggle-limit]] CORRECTED. Open follow-up: reduce selectMode switch latency = single-input-source
+  architecture (big change, unsolved). git: committed db07625, pushing.
+- **2026-06-18 — (superseded by above) device-flag attempt + version display + install-race fixes** (commits 68134e0,
+  6c14731, 5353b13, 38812b1). Version now shows in 정보/About (build with `VERSION=1.15.1`); install must cp-first
+  then killall (race). Per-keystroke dead IPC removed (typing faster, user-confirmed).
   File-logging diagnostic proved: while `IsSecureEventInputEnabled()` and focus is in the secure context (Terminal),
   bomi receives ZERO events → IME fully bypassed → unfixable in-IME for that case (the user's real scenario). Same
   root as the 2026-06-16 BCT secure-input lag report. The committed device-flag fix (`68134e0`) only helps the
