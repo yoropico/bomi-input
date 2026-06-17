@@ -54,6 +54,10 @@ open "/Library/Input Methods/bomi-input.app"
 - `log` is a zsh builtin → use `/usr/bin/log show …`.
 - `pbxproj` still carries upstream team `9384JEL3M9` / "Developer ID Application"; override on the
   command line only — do NOT commit team changes.
+- **Tests** (`xcodebuild test -scheme OSX … -only-testing:OSXTests`): the test host IS the IME app, so it
+  hangs forever on the `IMKServer` connection-name collision if the installed IME is running. `killall
+  bomi-input` BEFORE running tests, then reinstall after. Baseline: 94 run / 1 expected fail
+  (`GureumObjCTests testIPMDServerClientWrapper` — stale `Gureum-Swift.h` import, test target only).
 
 ## git
 One plain commit, explicit `git add` paths, no reset/amend/rebase. Push to `main` needs fresh

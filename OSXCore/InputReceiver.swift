@@ -50,16 +50,10 @@ public class InputReceiver: InputTextDelegate {
                modifiers flags: NSEvent.ModifierFlags,
                client sender: IMKTextInput & IMKUnicodeTextInput) -> InputResult
     {
-        let selected = sender.selectedRange()
-        let marked = sender.markedRange()
-        if selected.location != marked.location {
-//            dlog(DEBUG_LOGGING, "MISMATCHING: \(selected) \(marked)")
-//            cancelComposition()
-//            sender.setMarkedText("", selectionRange: NSRange(location: 0, length: 0), replacementRange: NSRange(location: selected.location, length: 0))
-//
-//            // commitComposition(sender)
-//            marked = selected
-        }
+        // NOTE: 이전에는 매 키 입력마다 sender.selectedRange() + sender.markedRange()
+        // (각각 포커스된 앱으로의 동기 IPC 왕복)를 호출했으나, 그 값을 쓰던 블록이
+        // 전부 주석 처리돼 결과가 버려지고 있었다. per-keystroke 지연만 유발하므로 제거.
+        // (커밋/조합 경로는 아래에서 필요한 시점에만 selectionRange를 질의한다.)
 
         // 입력기용 특수 커맨드 처리
         if let command = composer.filterCommand(keyCode: keyCode, modifiers: flags, client: sender) {

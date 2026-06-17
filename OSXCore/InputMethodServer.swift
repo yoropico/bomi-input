@@ -132,6 +132,42 @@ class IOKitty {
     }
 }
 
+// MARK: - Right toggle key detection from the IME's own flagsChanged stream
+
+/// 우측 토글 모디파이어 키의 HID usage를 NSEvent/CGEvent의 device-dependent
+/// 모디파이어 비트마스크(IOKit `IOLLEvent.h`의 `NX_DEVICE*_KEYMASK`)로 변환한다.
+///
+/// 전역 IOHIDManager 모니터(`IOKitty`)는 secure input 등으로 다른 프로세스의
+/// 입력 모니터링이 차단되면 키를 못 잡지만, IME 자신이 받는 `flagsChanged`
+/// 이벤트의 device-dependent 비트는 그대로 살아 있다(한글 타이핑이 되는 한
+/// 보장됨). 이 매핑은 그 비트로 좌/우 모디파이어를 직접 구분하기 위한 것이다.
+/// 매핑이 없는 usage(0=비활성 등)는 0을 반환한다.
+func deviceModifierMask(forKeyboardUsage usage: Int) -> UInt {
+    switch usage {
+    case kHIDUsage_KeyboardRightControl: return 0x2000 // NX_DEVICERCTLKEYMASK
+    case kHIDUsage_KeyboardRightShift: return 0x0004 // NX_DEVICERSHIFTKEYMASK
+    case kHIDUsage_KeyboardRightAlt: return 0x0040 // NX_DEVICERALTKEYMASK
+    case kHIDUsage_KeyboardRightGUI: return 0x0010 // NX_DEVICERCMDKEYMASK
+    default: return 0
+    }
+}
+
+/// 이번 `flagsChanged`에서 우측 토글 키가 "눌림"(0→1)으로 전이됐는지 판정하는
+/// 순수 함수.
+///
+/// - Parameters:
+///   - changed: 직전 플래그와 현재 플래그의 차이(`symmetricDifference`)의 rawValue.
+///   - current: 현재 이벤트 `modifierFlags`의 rawValue.
+///   - toggleKeyUsage: 설정된 우측 토글 키의 HID usage.
+/// - Returns: 토글 키의 device 비트가 이번 이벤트에서 새로 켜졌으면 `true`.
+func rightToggleKeyDidPress(changed: UInt, current: UInt, toggleKeyUsage: Int) -> Bool {
+    let mask = deviceModifierMask(forKeyboardUsage: toggleKeyUsage)
+    guard mask != 0 else { return false }
+    // 토글 키의 device 비트가 이번 이벤트에서 바뀌었고(`changed`), 지금 켜져
+    // 있으면(`current`) = 눌림(0→1) 전이. 떼임(1→0)은 current에 비트가 없어 제외된다.
+    return (changed & mask) != 0 && (current & mask) != 0
+}
+
 /*!
  @brief  공통적인 OSX의 입력기 구조를 다룬다.
 

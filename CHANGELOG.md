@@ -8,6 +8,13 @@
 아래 항목은 upstream 대비 이 포크에서 추가된 변경 사항이며, upstream 자체의
 변경 이력은 원본 저장소를 참고해 주세요.
 
+## [1.15.1] - 2026-06-17
+
+### 고침 (Fixed)
+
+- **한/영 전환이 간헐적으로 안 되던 문제** — 다른 앱(비밀번호 입력 칸·터미널 등)이 macOS Secure Event Input을 켜면 전역 키 모니터링이 시스템 전역으로 차단되어, 한글은 입력되는데 오른쪽 Command(한/영) 토글만 먹통이 되고 다른 곳을 클릭하면 풀리던 문제를 고쳤습니다. 토글 키를 전역 `IOHIDManager` 모니터에만 의존하던 것에서, 입력기 자신이 받는 `flagsChanged` 이벤트의 좌/우 구분 모디파이어 비트로 직접 감지하도록 바꿨습니다(한글이 입력되는 한 항상 동작; `IOHIDManager` 경로는 호환용 폴백으로 유지). (`OSXCore/InputController.swift`, `OSXCore/InputMethodServer.swift`, 신규 `GureumTests/RightToggleKeyTests.swift`)
+- **타이핑 지연 감소** — 키 입력 경로 진입부(`InputReceiver.input(text:)`)에서 매 글자마다 호출하던 `selectedRange()`·`markedRange()`(포커스된 앱으로의 동기 IPC 왕복) 두 호출을 제거했습니다. 그 값을 쓰던 분기가 전부 주석 처리되어 결과가 버려지고 있었으므로 동작 변화 없이 글자당 앱 왕복만 줄어듭니다. (`OSXCore/InputReceiver.swift`)
+
 ## [1.15.0] - 2026-06-01
 
 코드 정리와 현대화 릴리스입니다. 죽은 코드와 무거운 의존성을 크게 줄였습니다.

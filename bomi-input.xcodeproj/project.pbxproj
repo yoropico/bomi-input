@@ -119,6 +119,7 @@
 		80A02B25217E1AA90018E658 /* hangul-keyboard-2-full.xml in Copy Keyboards Files */ = {isa = PBXBuildFile; fileRef = 80A02B23217E1AA90018E658 /* hangul-keyboard-2-full.xml */; };
 		A34E20012168B21B00B12476 /* GureumTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3BAAE062160C6970076C66D /* GureumTests.swift */; };
 		28EC00BE1701F81F6790F029 /* InlineCompositionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CCC99FB06F6D24E5F983C4 /* InlineCompositionTests.swift */; };
+		DA00000000000000000000A2 /* RightToggleKeyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA00000000000000000000A1 /* RightToggleKeyTests.swift */; };
 		A34E2025216ADBEC00B12476 /* emoji.txt in Copy Hanja Files */ = {isa = PBXBuildFile; fileRef = A34E2024216ADBEC00B12476 /* emoji.txt */; };
 		A36A435B216F86780052BE12 /* emoji_ko.txt in Copy Hanja Files */ = {isa = PBXBuildFile; fileRef = A36A4358216F86780052BE12 /* emoji_ko.txt */; };
 		CE21ADE3280A037400B54371 /* MASShortcut in Frameworks */ = {isa = PBXBuildFile; productRef = CE21ADD8280A026300B54371 /* MASShortcut */; };
@@ -389,6 +390,7 @@
 		A36A4358216F86780052BE12 /* emoji_ko.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = emoji_ko.txt; sourceTree = "<group>"; };
 		A3BAAE062160C6970076C66D /* GureumTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = GureumTests.swift; sourceTree = "<group>"; };
 		F1CCC99FB06F6D24E5F983C4 /* InlineCompositionTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = InlineCompositionTests.swift; sourceTree = "<group>"; };
+		DA00000000000000000000A1 /* RightToggleKeyTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = RightToggleKeyTests.swift; sourceTree = "<group>"; };
 		CE21AE05280B068B00B54371 /* TISInputSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TISInputSource.swift; sourceTree = "<group>"; };
 		E54B8381214299EB00527218 /* GureumComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GureumComposer.swift; sourceTree = "<group>"; };
 		E5A0EA092139098800D4AD69 /* GureumAppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GureumAppDelegate.swift; sourceTree = "<group>"; };
@@ -666,6 +668,7 @@
 			children = (
 				A3BAAE062160C6970076C66D /* GureumTests.swift */,
 				F1CCC99FB06F6D24E5F983C4 /* InlineCompositionTests.swift */,
+				DA00000000000000000000A1 /* RightToggleKeyTests.swift */,
 				388186B321EB4E4C004B7FDB /* MockApp.swift */,
 				3881866121EB239D004B7FDB /* MockInputClient.h */,
 				3881866221EB239E004B7FDB /* MockInputClient.m */,
@@ -1116,6 +1119,7 @@
 			files = (
 				A34E20012168B21B00B12476 /* GureumTests.swift in Sources */,
 				28EC00BE1701F81F6790F029 /* InlineCompositionTests.swift in Sources */,
+				DA00000000000000000000A2 /* RightToggleKeyTests.swift in Sources */,
 				388186B521EB4E98004B7FDB /* MockApp.swift in Sources */,
 				3881866421EB23F3004B7FDB /* MockInputClient.m in Sources */,
 				80983E8022AE2A7000A69C08 /* UpdateManager.swift in Sources */,
