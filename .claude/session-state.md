@@ -1,4 +1,14 @@
 ## Session state (devmode)
+- **2026-06-18 — Toggle bug = macOS Secure Event Input (DEFINITIVE), device-flag fix only partial; version display fixed.**
+  File-logging diagnostic proved: while `IsSecureEventInputEnabled()` and focus is in the secure context (Terminal),
+  bomi receives ZERO events → IME fully bypassed → unfixable in-IME for that case (the user's real scenario). Same
+  root as the 2026-06-16 BCT secure-input lag report. The committed device-flag fix (`68134e0`) only helps the
+  narrow non-secure-field-focus case; harmless + bundles the user-confirmed per-key perf win. CHANGELOG `[1.15.1]`
+  reworded honestly + CLAUDE.md documents `VERSION=` (committed `5353b13`). **Version display fixed**: builds now
+  pass `VERSION=1.15.1` (+ `CURRENT_PROJECT_VERSION=1.15`) so Info.plist `${VERSION}` → `CFBundleShortVersionString`
+  is populated and the **정보/About panel shows "버전 1.15.1"** (was empty before). Installed clean build (no
+  diagnostic). See memory [[secure-input-toggle-limit]]. Possible follow-ups: macOS-native input-source switch
+  shortcut as a secure-input workaround (untested); enrich CFBundleVersion with git hash for build-level verify.
 - **2026-06-17 — FIX SHIPPED + COMMITTED `68134e0` + PUSHED to origin/main: right-Command (한/영) toggle
   intermittently dead, fixed by refocus; + per-keystroke IPC removal (typing latency, user-confirmed faster).**
   CHANGELOG.md `[1.15.1]` recorded. Installed (Release) and dogfooding. Root cause (code-confirmed): right-toggle detection depended SOLELY on the global IOHIDManager monitor
