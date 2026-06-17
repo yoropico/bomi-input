@@ -1,4 +1,32 @@
 ## Session state (devmode)
+- **2026-06-17 — FIX SHIPPED + COMMITTED `68134e0` + PUSHED to origin/main: right-Command (한/영) toggle
+  intermittently dead, fixed by refocus; + per-keystroke IPC removal (typing latency, user-confirmed faster).**
+  CHANGELOG.md `[1.15.1]` recorded. Installed (Release) and dogfooding. Root cause (code-confirmed): right-toggle detection depended SOLELY on the global IOHIDManager monitor
+  (IOKitty `rightKeyPressed`, `InputController` flagsChanged:383), decoupled from the IME's own event stream —
+  blocked system-wide when ANOTHER process holds macOS Secure Event Input, while normal IMK delivery to the focused
+  non-secure field keeps working (Korean still types, but 한/영 toggle + menu-bar icon never fire; refocus releases
+  the other app's secure input → recovers). FIX (TDD): detect the right toggle from the IME's OWN `flagsChanged`
+  device-dependent modifier bits (`deviceModifierMask`/`rightToggleKeyDidPress` in InputMethodServer.swift, mapping
+  HID usage→`NX_DEVICE*_KEYMASK`); IOKitty consumed on toggle-key bit-change to avoid double-fire, kept as fallback
+  when device bits absent (no regression). Diagnostic `NSLog` fires when the device path rescues a toggle IOKitty
+  missed (`log show … | grep "device flags"`). Files: OSXCore/InputMethodServer.swift, OSXCore/InputController.swift,
+  GureumTests/RightToggleKeyTests.swift (12/12 pass; full OSXTests 94 run/1 known baseline), pbxproj (+4 entries).
+  Release built + installed (clean load), COMMITTED `68134e0` + pushed. Assumption: AppKit delivers device-dependent
+  modifier bits in flagsChanged (standard); else safe fallback to old IOKitty path. PENDING: real-world confirm of
+  the secure-input scenario (couldn't reproduce on demand; diagnostic NSLog `… | grep "device flags"` will show it).
+  (Distinct from the 2026-06-16 latency report below — that refuted per-keystroke churn; this is the toggle path.)
+- **2026-06-16 — Secure-input lag report (`/Users/bglee/bomi-ime-secure-input-conflict-report.md`): bomi EXONERATED.**
+  Report claimed bomi does per-keystroke input-source churn under macOS Secure Event Input (SecureField). REFUTED by
+  code (no `TISSelectInputSource` anywhere, no input-source-change observer — CloudStatusItemController removed; key
+  hot-path uses cached `useMarkedText`; Release `dlog`=no-op) AND by live test. Harness `/tmp/securetest.swift`
+  (AppKit `NSSecureTextField` + control `NSTextField`; logs inter-keystroke delta + `IsSecureEventInputEnabled` +
+  current TIS source). User typed ASCII fast, `secure=YES` confirmed → **bomi FAST**: deltas 15–90ms bursts, steady
+  ~83ms autorepeat runs; spikes (19741/1790/775ms) = pauses/backspaces, not per-key lag. TIS src stayed
+  `com.yoropico…bomi-input.system` (NO ABC coercion); bomi-input PID 993 same etime before/after (no relaunch),
+  0% CPU. Differentiator = BCT's **SwiftUI `SecureField`** (or BCT terminal env), NOT bomi. Report's bomi-side
+  fixes (#1 secure-detect / #2 TIS-debounce / #3 passthrough) NOT implemented — nothing to fix in bomi. BCT: keep
+  TextField+mask workaround. Optional next: minimal SwiftUI `SecureField` test to nail SwiftUI-vs-AppKit (needs
+  on-device typing). No bomi code/commits changed.
 - Updated: 2026-06-05. **Inline PHASE 2 (③ non-invasive gate + ② cursor-move) IMPLEMENTED + committed LOCAL
   `2a34871`, behind kill-switch (inline still OFF/default-FALSE).** Built via devmode TEAM mode (planner step
   skipped — used the committed writing-plans plan; implementer→tester→reviewer). OSXTests **PASS** (82 run, 1
