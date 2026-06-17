@@ -16,7 +16,23 @@ let preferencesWindow: NSWindowController = NSStoryboard(name: "Configuration", 
 extension InputController {
     @IBAction func showStandardAboutPanel(_ sender: Any) {
         NSApp.activate(ignoringOtherApps: true)
-        NSApp.orderFrontStandardAboutPanel(sender)
+        // 버전을 Info.plist 렌더링에 맡기지 않고 코드에서 직접 패널에 전달한다.
+        // (입력기 번들의 CFBundleName이 비어 있어 표준 패널이 버전을 표시하지
+        //  못하는 경우가 있어, applicationVersion/version + credits로 못박는다.)
+        let info = Bundle.main.infoDictionary
+        let shortVersion = (info?["CFBundleShortVersionString"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "?"
+        let buildVersion = (info?["CFBundleVersion"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "?"
+        let credits = NSAttributedString(
+            string: "bomi-input \u{2014} 한국어 입력기\n버전 \(shortVersion) (빌드 \(buildVersion))",
+            attributes: [.font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)]
+        )
+        let options: [NSApplication.AboutPanelOptionKey: Any] = [
+            .applicationName: "bomi-input",
+            .applicationVersion: shortVersion,
+            .version: buildVersion,
+            .credits: credits,
+        ]
+        NSApp.orderFrontStandardAboutPanel(options: options)
     }
 
     @IBAction func showPreferencesWindow(_: Any) {

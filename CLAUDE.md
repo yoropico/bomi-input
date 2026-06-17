@@ -40,13 +40,19 @@ xcodebuild -project bomi-input.xcodeproj -scheme OSX -configuration Release \
   DEVELOPMENT_TEAM=G7J2LY4LP9 CODE_SIGN_STYLE=Automatic CODE_SIGN_IDENTITY="Apple Development" \
   -allowProvisioningUpdates build
 ```
-Install (sudo has no TTY here → use admin AppleScript):
+Install (sudo has no TTY here → use admin AppleScript). **COPY FIRST, then `killall`** (see race note):
 ```
-killall bomi-input 2>/dev/null
 osascript -e "do shell script \"rm -rf '/Library/Input Methods/bomi-input.app' && \
   cp -R '<built>/bomi-input.app' '/Library/Input Methods/bomi-input.app'\" with administrator privileges"
+killall bomi-input 2>/dev/null   # IMK relaunches, now reading the NEW on-disk binary
 open "/Library/Input Methods/bomi-input.app"
 ```
+- **Install order matters (race).** `killall` makes IMK *immediately* relaunch the IME, which races the
+  `cp` if you kill first → the relaunched process maps the OLD binary and keeps running stale code (e.g.
+  the version shows EMPTY, or a just-fixed bug appears unfixed). Always `cp` the new build into place
+  FIRST, then `killall`. Verify freshness: the running pid's start time must be AFTER the install (`ps -o
+  pid,lstart -p $(pgrep -x bomi-input)`). A full clean swap needs logout/login, but cp-then-kill is enough
+  for dev iteration.
 - Version overrides are required. `OSX/Info.plist` uses `${VERSION}` for both `CFBundleShortVersionString`
   and `CFBundleVersion` (the version shown in the **bomi-input 정보 / About panel**). The "Generate
   Version.xcconfig" build phase fills `VERSION` from `git describe --tags` (e.g. `1.15.0-63-gxxxx`), but

@@ -14,6 +14,7 @@
 
 - **한/영 토글 감지 견고화 (일부 secure-input 상황 한정 개선).** 오른쪽 Command(한/영) 토글을 전역 `IOHIDManager` 모니터에만 의존하던 것에서, 입력기 자신이 받는 `flagsChanged` 이벤트의 좌/우 구분 모디파이어 비트로도 감지하도록 보강했습니다(`IOHIDManager` 경로는 폴백으로 유지). 다른 앱이 macOS Secure Event Input을 켜면 그 전역 모니터가 차단돼 오른쪽 Command 토글이 먹통이 되던(다른 곳 클릭 시 복구) 증상에 도움이 됩니다. **한계:** 포커스가 secure 컨텍스트 자체(예: 터미널의 Secure Keyboard Entry, 비밀번호 입력 칸)에 있을 때는 macOS가 입력기를 통째로 우회해 어떤 키 이벤트도 전달하지 않으므로, 그 경우의 토글은 입력기 차원에서 고칠 수 없습니다(macOS 제약). 즉 이 변경은 secure input이 떠 있어도 **비-secure 칸에 포커스인 경우**에 한해 도움이 됩니다. (`OSXCore/InputController.swift`, `OSXCore/InputMethodServer.swift`, 신규 `GureumTests/RightToggleKeyTests.swift`)
 - **타이핑 지연 감소** — 키 입력 경로 진입부(`InputReceiver.input(text:)`)에서 매 글자마다 호출하던 `selectedRange()`·`markedRange()`(포커스된 앱으로의 동기 IPC 왕복) 두 호출을 제거했습니다. 그 값을 쓰던 분기가 전부 주석 처리되어 결과가 버려지고 있었으므로 동작 변화 없이 글자당 앱 왕복만 줄어듭니다. (`OSXCore/InputReceiver.swift`)
+- **"bomi-input에 관하여"(정보/About) 패널에 버전 표시.** 빌드 버전(`CFBundleShortVersionString`/`CFBundleVersion`)이 비어 정보 창에 버전이 안 보이던 문제를 고쳤습니다. 빌드에 버전을 채우고, 정보 패널에 버전 문자열을 코드에서 직접 전달하도록 했습니다(`OSX/GureumMenu.swift`). 재설치 시 IME가 옛 바이너리로 재실행되던 레이스(설치 순서)도 함께 정리했습니다.
 
 ## [1.15.0] - 2026-06-01
 
