@@ -36,7 +36,7 @@ Identity: `Apple Development: yoropico@gmail.com (K83K59TGLX)`, team `G7J2LY4LP9
 ```
 xcodebuild -project bomi-input.xcodeproj -scheme OSX -configuration Release \
   -derivedDataPath build/DerivedData-signed \
-  CURRENT_PROJECT_VERSION=1.13 MARKETING_VERSION=1.13.2 \
+  VERSION=1.15.1 CURRENT_PROJECT_VERSION=1.15 MARKETING_VERSION=1.15.1 \
   DEVELOPMENT_TEAM=G7J2LY4LP9 CODE_SIGN_STYLE=Automatic CODE_SIGN_IDENTITY="Apple Development" \
   -allowProvisioningUpdates build
 ```
@@ -47,9 +47,14 @@ osascript -e "do shell script \"rm -rf '/Library/Input Methods/bomi-input.app' &
   cp -R '<built>/bomi-input.app' '/Library/Input Methods/bomi-input.app'\" with administrator privileges"
 open "/Library/Input Methods/bomi-input.app"
 ```
-- `CURRENT_PROJECT_VERSION`/`MARKETING_VERSION` overrides are required: apple-generic casts
-  `CURRENT_PROJECT_VERSION` to double, so a dotted git-describe value breaks the build. An empty
-  `${VERSION}` makes Xcode drop `CFBundleVersion` → the IME won't register.
+- Version overrides are required. `OSX/Info.plist` uses `${VERSION}` for both `CFBundleShortVersionString`
+  and `CFBundleVersion` (the version shown in the **bomi-input 정보 / About panel**). The "Generate
+  Version.xcconfig" build phase fills `VERSION` from `git describe --tags` (e.g. `1.15.0-63-gxxxx`), but
+  that does NOT reach Info.plist in our command-line builds, so the displayed version comes out EMPTY unless
+  you pass `VERSION=…` explicitly. Pass a clean release string (`VERSION=1.15.1`) so 정보 shows "버전 1.15.1".
+  Separately, `CURRENT_PROJECT_VERSION` MUST be double-castable (apple-generic casts it) — keep it one-dot
+  (`1.15`), never the dotted git-describe. An empty `${VERSION}`/`CFBundleVersion` also makes the IME fail to
+  register, so never omit `VERSION=`. Bump all three together when releasing.
 - Every build dirties `OSX/Version.xcconfig` → `git checkout OSX/Version.xcconfig`; keep it OUT of commits.
 - `log` is a zsh builtin → use `/usr/bin/log show …`.
 - `pbxproj` still carries upstream team `9384JEL3M9` / "Developer ID Application"; override on the
