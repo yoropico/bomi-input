@@ -135,6 +135,22 @@
   delete cursor jump; terminals; Word custom engine. User DISABLED inline → marked stable. Re-enable needs
   the fundamental hardening (spec STATUS 2026-06-05 section): ①validate-or-bail ②cursor-move invalidation
   ③capability-probe→marked. `2e9cea1` (local) = partial commit-dup fix, dormant.
+- **2026-06-18 RECURRENCE → DOGFOOD RESUMED (inline ON, DIAG build live)**: user reported "랜덤하게
+  마지막단어 중복"; root cause = inline was RE-ENABLED (container plist `InlineCompositionEnabled=true`;
+  read the REAL sandboxed plist, not the code default). User confirmed INTENTIONAL (의도하였음) → wants
+  inline working. Re-enabled inline. Reported dup location = **Apple Terminal** (com.apple.Terminal), but
+  INTERMITTENT (single tests + user's own live msgs all clean) → "랜덤". Installed FILE-logging diagnostic
+  build **1.15.1-diag2** (pid 62015): logs per-activateServer classification (bundle/shows/selQ/mode/marked)
+  + per-commit (inlineBranch/commitString) with timestamps to ~/Library/Containers/.../Data/bomi_inline_diag.log.
+  HYPOTHESIS: useMarkedText cached once at activateServer; if bundleIdentifier()==nil or Apple-signal
+  (chain step 2, precedes step-6 terminal allowlist) misbehaves at that instant → Terminal mis-cached as
+  inline that focus session → dup until refocus. AWAITING: user reproduces dup → read log tail → confirm +
+  fix. **DESIGN DECISION (user, 2026-06-18): KEEP default=inline; switch to marked only for specific cases
+  (= current blocklist + learnedAppendOnly auto-demote). Do NOT invert to default-marked (spec ③ rejected).**
+  So the fix = make the "specific case → marked" RELIABLE (stop the terminal intermittent leak; likely
+  reorder known-marked lists before the Apple-signal step OR fix nil-bundleID-at-activate), NOT a wholesale
+  inversion. DIAG CODE UNCOMMITTED (InputController.swift + InputReceiver.swift) — `git checkout` both
+  before any commit.
 
 ### NEXT
 - **Inline PHASE 2 (paused, resume when ready)**: invasive pre-composition probe → glitch-free ③
