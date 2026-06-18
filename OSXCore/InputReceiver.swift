@@ -16,7 +16,6 @@ public class InputReceiver: InputTextDelegate {
     var composer = GureumComposer()
     weak var controller: InputController!
     var inputting: Bool = false
-    var hasSelectionRange: Bool = false
 
     init(server: IMKServer, delegate: Any!, client: IMKTextInput & IMKUnicodeTextInput, controller: InputController) {
         dlog(DEBUG_INPUT_RECEIVER, "**** NEW INPUT CONTROLLER INIT **** WITH SERVER: %@ / DELEGATE: %@ / CLIENT: %@", server, (delegate as? NSObject) ?? "(nil)", (client as? NSObject) ?? "(nil)")
@@ -104,9 +103,13 @@ public class InputReceiver: InputTextDelegate {
                 return result
             }
             let hasComposedString = !_internalComposedString.isEmpty
-            let selectionRange = controller.selectionRange()
-            hasSelectionRange = selectionRange.location != NSNotFound && selectionRange.length > 0
-            if commited || controller.selectionRange().length > 0 || hadComposedString || hasComposedString {
+            // updateComposition 필요 판정. controller.selectionRange()는 포커스 앱으로의
+            // 동기 IPC 왕복이라, 비용 없는 로컬 검사(commited/hadComposedString/
+            // hasComposedString)를 OR 앞쪽에 두어 먼저 보고, 그래도 판정이 안 날 때만
+            // 마지막에 질의해 키 입력당 IPC를 단락(short-circuit)으로 아낀다. (이전에는
+            // 여기서 selectionRange를 한 번 더 질의해 hasSelectionRange에 넣었으나, 그
+            // 값이 어디서도 읽히지 않아 매 키 버려지던 IPC였으므로 제거했다.)
+            if commited || hadComposedString || hasComposedString || controller.selectionRange().length > 0 {
                 updateComposition() // 조합 중인 문자 반영
             }
         }
