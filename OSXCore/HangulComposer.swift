@@ -46,11 +46,21 @@ func convertUnicode(_ ucsString: UnsafePointer<HGUCSChar>) -> [HGUCSChar] {
 
 func representableString(ucsString: UnsafePointer<HGUCSChar>) -> String {
     let isCombinating = !HGCharacterIsChoseong(ucsString[0]) || ucsString[0] == CHO_FILLER || ucsString[1] == JUNG_FILLER
+    let raw: String
     if isCombinating {
-        return NSString(ucsString: convertUnicode(ucsString)) as String
+        raw = NSString(ucsString: convertUnicode(ucsString)) as String
+    } else {
+        // 옛한글은 그대로
+        raw = NSString(ucsString: ucsString) as String
     }
-    // 옛한글은 그대로
-    return NSString(ucsString: ucsString) as String
+    // NFC 정규화. libhangul의 진행형 preedit은 결합조합 자모(NFD, U+1100 블록: 예
+    // "하" = U+1112 U+1161)로 나오는데, 결합 자모는 Unicode combining class가 0이라
+    // 일부 터미널이 한 음절로 합치지 못하고 셀을 어긋나게 잡는다(참고: kitty #8433) →
+    // 조합 중(NFD, 여러 셀) vs 커밋 후(NFC 정밀조합, 1셀)의 레이아웃 차이가 마지막
+    // 음절이 중복돼 보이는 잔상을 만든다. NFC로 정밀조합 음절(U+AC00 블록)을 만들어
+    // 1음절 1셀을 보장한다. 정밀조합형이 없는 옛한글, 호환 자모(U+3130), 이미 NFC인
+    // 커밋 문자열에는 no-op이라 안전하다.
+    return raw.precomposedStringWithCanonicalMapping
 }
 
 // MARK: - HangulComposer 클래스
