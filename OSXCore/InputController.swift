@@ -376,7 +376,8 @@ public extension InputController { // IMKServerInputHandleEvent
                     InputMethodServer.shared.io?.rollback = toggle
                 } else {
                     dlog(DEBUG_IOKIT_EVENT, "controller detected capslock")
-                    (sender as! IMKTextInput).selectMode(receiver.composer.inputMode)
+                    let mode = receiver.composer.inputMode
+                    selectInputSourceFast(id: mode) { (sender as! IMKTextInput).selectMode(mode) }
                 }
             }
 
