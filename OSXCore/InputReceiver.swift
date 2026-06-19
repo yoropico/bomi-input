@@ -12,6 +12,12 @@ import InputMethodKit
 
 let DEBUG_INPUT_RECEIVER = false
 
+/// 토글 대상 입력소스 ref 캐시(id → TISInputSource). 입력소스 목록은 거의 바뀌지 않으므로
+/// id별로 캐시해 매 토글의 `TISCreateInputSourceList` 조회를 피한다. 선택 실패(소스
+/// 비활성/제거 등으로 ref가 stale) 시 해당 항목을 무효화하고 다시 조회한다.
+/// IMK 입력 처리(메인 스레드)에서만 접근하므로 잠금 불필요.
+private var fastSelectSourceCache: [String: TISInputSource] = [:]
+
 /// 입력소스를 빠른 경로로 전환한다.
 ///
 /// IMK의 `selectMode`(= ObjC `selectInputMode:`)로 한/영을 전환하면 macOS가 입력소스를
@@ -19,13 +25,22 @@ let DEBUG_INPUT_RECEIVER = false
 /// 직접 선택하면 즉시 전환되고 메뉴바 한/A 아이콘도 정상 갱신된다. 대상 소스가
 /// 비활성/미발견이거나 선택이 실패하면 기존 `selectMode` 경로(`fallback`)로 되돌린다.
 func selectInputSourceFast(id: String, fallback: () -> Void) {
+    // 캐시된 ref로 먼저 시도.
+    if let cached = fastSelectSourceCache[id] {
+        if TISSelectInputSource(cached) == noErr {
+            return
+        }
+        fastSelectSourceCache[id] = nil // stale → 무효화 후 재조회
+    }
     let filter: NSDictionary = [kTISPropertyInputSourceID as String: id]
-    if let list = TISCreateInputSourceList(filter, false)?.takeRetainedValue() as? [TISInputSource],
-       let source = list.first,
+    if let source = (TISCreateInputSourceList(filter, false)?.takeRetainedValue() as? [TISInputSource])?.first,
        TISSelectInputSource(source) == noErr
     {
+        fastSelectSourceCache[id] = source
         return
     }
+    // 영문(로마자) 소스가 입력소스 목록에 없으면 여기로 떨어진다(느린 selectMode로 폴백).
+    dlog(DEBUG_INPUT_RECEIVER, "selectInputSourceFast: '%@' not enabled/selectable → selectMode fallback", id)
     fallback()
 }
 
