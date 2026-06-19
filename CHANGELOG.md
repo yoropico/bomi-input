@@ -8,6 +8,12 @@
 아래 항목은 upstream 대비 이 포크에서 추가된 변경 사항이며, upstream 자체의
 변경 이력은 원본 저장소를 참고해 주세요.
 
+## [1.15.2] - 2026-06-19
+
+### 고침 (Fixed)
+
+- **한/영 토글의 ~1초 지연 제거.** 1.15.1에 "기존과 동일하게 남는다"고 적어 둔, 토글 시 macOS가 한글↔로마자 입력 소스를 전환하며 생기던 ~1초 지연을 고쳤습니다. on-device 측정 결과 입력기 처리와 `selectMode` 호출 자체는 7ms 미만이었고, 지연은 IMK `selectMode`(= ObjC `selectInputMode:`)가 유발하는 느린 입력 소스 전환의 꼬리였습니다 — 같은 두 소스를 Ctrl-Option-Space로 바꾸면 즉시 전환되며 이는 `TISSelectInputSource`를 씁니다. 그래서 토글의 소스 전환을 `selectMode` 대신 **`TISSelectInputSource`**(Ctrl-Option-Space와 같은 빠른 경로)로 바꿨고, 대상 소스가 비활성/미발견이거나 선택이 실패하면 기존 `selectMode`로 폴백합니다. 메뉴바 한/A 아이콘은 그대로 정상 토글되며, 입력 소스 재등록이나 별도 인디케이터는 필요하지 않습니다. 대상 소스 ref는 캐시해 매 토글의 조회 비용을 줄입니다. (전제: 영문 "로마자" 입력 소스가 입력 소스 목록에 켜져 있어야 빠른 경로가 동작하며, 없으면 폴백되어 기존처럼 동작합니다.) (`OSXCore/InputReceiver.swift`, `OSXCore/InputController.swift`)
+
 ## [1.15.1] - 2026-06-17
 
 ### 고침 (Fixed)
