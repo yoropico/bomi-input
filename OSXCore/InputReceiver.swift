@@ -6,10 +6,28 @@
 //  Copyright © 2018 youknowone.org. All rights reserved.
 //
 
+import Carbon
 import Foundation
 import InputMethodKit
 
 let DEBUG_INPUT_RECEIVER = false
+
+/// 입력소스를 빠른 경로로 전환한다.
+///
+/// IMK의 `selectMode`(= ObjC `selectInputMode:`)로 한/영을 전환하면 macOS가 입력소스를
+/// 매우 느리게(~1초) 바꾼다. Ctrl-Opt-Space와 동일한 `TISSelectInputSource`로 대상 소스를
+/// 직접 선택하면 즉시 전환되고 메뉴바 한/A 아이콘도 정상 갱신된다. 대상 소스가
+/// 비활성/미발견이거나 선택이 실패하면 기존 `selectMode` 경로(`fallback`)로 되돌린다.
+func selectInputSourceFast(id: String, fallback: () -> Void) {
+    let filter: NSDictionary = [kTISPropertyInputSourceID as String: id]
+    if let list = TISCreateInputSourceList(filter, false)?.takeRetainedValue() as? [TISInputSource],
+       let source = list.first,
+       TISSelectInputSource(source) == noErr
+    {
+        return
+    }
+    fallback()
+}
 
 public class InputReceiver: InputTextDelegate {
     var inputClient: IMKTextInput & IMKUnicodeTextInput
@@ -285,7 +303,9 @@ public class InputReceiver: InputTextDelegate {
                 if result.action != .cancel {
                     commitCompositionEvent(sender)
                     if case let .layout(mode) = result.action, layout != .toggleByCapsLock {
-                        (sender as IMKTextInput).selectMode(mode)
+                        // 한/영 토글: IMK selectMode(=selectInputMode:)는 ~1초 느린 경로라
+                        // TISSelectInputSource(Ctrl-Opt-Space와 같은 빠른 경로)로 직접 전환한다.
+                        selectInputSourceFast(id: mode) { (sender as IMKTextInput).selectMode(mode) }
                     }
                 } else {
                     updateComposition() // 조합 중인 문자 반영
