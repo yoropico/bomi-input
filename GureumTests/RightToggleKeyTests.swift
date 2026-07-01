@@ -89,4 +89,72 @@ final class RightToggleKeyTests: XCTestCase {
         // The command flag transitioned, but the event's keyCode is some other key.
         XCTAssertFalse(rightToggleKeyPressedByKeyCode(eventKeyCode: vkRightOption, changed: cmd, current: cmd, toggleKeyUsage: kHIDUsage_KeyboardRightGUI))
     }
+
+    // MARK: ModifierFlagsTracker — missed key-up wedge (root cause of "우측 Cmd, 아무 반응 없음")
+
+    // Helper: run one flagsChanged through the tracker and ask whether it's a fresh
+    // right-Command press (the exact composition used in InputController.handleEvent).
+    private func pressed(_ tracker: inout ModifierFlagsTracker, keyCode: Int, flags: UInt) -> Bool {
+        let changed = tracker.transition(to: NSEvent.ModifierFlags(rawValue: flags))
+        return rightToggleKeyPressedByKeyCode(eventKeyCode: keyCode,
+                                              changed: changed.rawValue,
+                                              current: flags,
+                                              toggleKeyUsage: kHIDUsage_KeyboardRightGUI)
+    }
+
+    func testMissedReleaseWedgesToggleUntilReset() {
+        var tracker = ModifierFlagsTracker()
+
+        // 1) Right-Command DOWN — a normal fresh press fires the toggle.
+        XCTAssertTrue(pressed(&tracker, keyCode: vkRightCommand, flags: cmd),
+                      "first right-Command press should toggle")
+
+        // 2) The key-up is MISSED: firing the toggle switches the input source
+        //    mid-press, so the right-Command release is delivered to a different
+        //    controller and this tracker never sees `flags == 0`.
+
+        // 3) Next Right-Command DOWN: with the wedged state (lastFlags still holds
+        //    the command bit) the transition cancels out and the press is silently
+        //    dropped — this is exactly "아무 반응 없음".
+        XCTAssertFalse(pressed(&tracker, keyCode: vkRightCommand, flags: cmd),
+                       "documents the wedge: a missed key-up eats the next transition")
+
+        // 4) reset() — what an app refocus (deactivate/activate) already does —
+        //    clears the wedge so the very next press toggles again.
+        tracker.reset()
+        XCTAssertTrue(pressed(&tracker, keyCode: vkRightCommand, flags: cmd),
+                      "reset must restore detection after a missed key-up")
+    }
+
+    func testResetLetsCleanPressReleaseCycleToggleEachPress() {
+        var tracker = ModifierFlagsTracker()
+        // A clean DOWN/UP cycle with a reset at the boundary (as activate/deactivate
+        // now does) must toggle on every DOWN and never on an UP.
+        XCTAssertTrue(pressed(&tracker, keyCode: vkRightCommand, flags: cmd))
+        XCTAssertFalse(pressed(&tracker, keyCode: vkRightCommand, flags: 0)) // release
+        tracker.reset()
+        XCTAssertTrue(pressed(&tracker, keyCode: vkRightCommand, flags: cmd))
+    }
+
+    // MARK: isDuplicateToggleFire — Chromium (Edge) duplicate-flagsChanged double-fire
+
+    func testDuplicateToggleFireSuppressedWithinWindow() {
+        // Edge/Chromium sends two press events 2–11ms apart for one physical press;
+        // the second (within the window) must be treated as a duplicate and suppressed.
+        XCTAssertTrue(isDuplicateToggleFire(sinceLastFire: 0.002, window: 0.08))
+        XCTAssertTrue(isDuplicateToggleFire(sinceLastFire: 0.011, window: 0.08))
+        XCTAssertTrue(isDuplicateToggleFire(sinceLastFire: 0.079, window: 0.08))
+    }
+
+    func testIntentionalToggleNotSuppressed() {
+        // A human re-toggling is far slower (≥150ms) and must pass through.
+        XCTAssertFalse(isDuplicateToggleFire(sinceLastFire: 0.15, window: 0.08))
+        XCTAssertFalse(isDuplicateToggleFire(sinceLastFire: 0.5, window: 0.08))
+        XCTAssertFalse(isDuplicateToggleFire(sinceLastFire: 0.08, window: 0.08)) // boundary: not < window
+    }
+
+    func testFirstFireNeverSuppressed() {
+        // No previous fire → caller passes a negative sentinel → never a duplicate.
+        XCTAssertFalse(isDuplicateToggleFire(sinceLastFire: -1, window: 0.08))
+    }
 }

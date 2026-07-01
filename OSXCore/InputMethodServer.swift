@@ -185,6 +185,49 @@ func rightToggleKeyPressedByKeyCode(eventKeyCode: Int, changed: UInt, current: U
     return (changed & flag) != 0 && (current & flag) != 0
 }
 
+/// `flagsChanged` 상태를 누적해 모디파이어 전이(`changed`)를 계산하되, 포커스/모드 경계에서
+/// **리셋할 수 있는** 작은 추적기.
+///
+/// 왜 리셋이 필요한가: 우측 Cmd 토글은 press 순간 입력소스를 전환(`TISSelectInputSource`)하는데,
+/// 그 전환이 조합 중(mid-press)에 일어나면서 뒤따르는 key-up(release)이 이 컨트롤러가 아닌
+/// 다른 곳으로 배달되어 **누락**될 수 있다. 리셋 없이 `lastFlags`만 누적하던 이전 방식에서는
+/// 그 순간 command 비트가 "눌린 채"로 wedge되어, 이후 모든 press가 "전이 없음"으로 보이고
+/// (`changed`에서 상쇄) 토글이 조용히 씹혔다 — 증상: **우측 Cmd, 아무 반응 없음, refocus로만
+/// 복구**. refocus가 고치는 이유는 재활성화가 상태를 새로 만들기 때문. `reset()`은 그 복구를
+/// activate/deactivate/토글 발동 직후에 **항상** 수행하게 만든다.
+struct ModifierFlagsTracker {
+    private(set) var lastFlags: NSEvent.ModifierFlags = []
+
+    /// 이번 `flagsChanged`의 플래그로 갱신하고, 직전 대비 바뀐 비트(`changed`)를 돌려준다.
+    mutating func transition(to flags: NSEvent.ModifierFlags) -> NSEvent.ModifierFlags {
+        let changed = lastFlags.symmetricDifference(flags)
+        lastFlags = flags
+        return changed
+    }
+
+    /// 누적 상태를 비운다. missed key-up이 있어도 다음 press가 정상 전이(0→1)로 잡히도록,
+    /// activate/deactivate와 토글 발동 직후에 호출한다.
+    mutating func reset() {
+        lastFlags = []
+    }
+}
+
+/// 우측 한/영 토글의 **중복 발동**을 시간으로 억제할지 판정(순수).
+///
+/// Chromium 기반 앱(Edge 등)은 우측 modifier **물리 누름 1회**에 대해 `flagsChanged` press
+/// 이벤트를 **2개**(수 ms 간격, on-device 확인: 2~11ms) 보낸다. 각 이벤트가 토글을 발동하면
+/// 한→영→한으로 **즉시 원복**되어 "전환이 안 되는" 것처럼 보인다(같은 Edge라도 이벤트가 1개인
+/// 필드는 정상 → "되는 곳/안되는 곳"). 직전 발동 이후 `window` 이내의 재발동은 이 중복으로
+/// 간주해 억제한다. 사람의 의도적 연타는 훨씬 느리므로(≥150ms) `window`(기본 80ms)를 통과한다.
+///
+/// - Parameters:
+///   - interval: 직전 발동으로부터 경과 시간(초). 첫 발동 등 직전이 없으면 억제하지 않도록
+///     음수/충분히 큰 값을 넘긴다.
+///   - window: 중복으로 볼 시간 창(초).
+func isDuplicateToggleFire(sinceLastFire interval: TimeInterval, window: TimeInterval = 0.08) -> Bool {
+    interval >= 0 && interval < window
+}
+
 /*!
  @brief  공통적인 OSX의 입력기 구조를 다룬다.
 
