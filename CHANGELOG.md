@@ -8,6 +8,12 @@
 아래 항목은 upstream 대비 이 포크에서 추가된 변경 사항이며, upstream 자체의
 변경 이력은 원본 저장소를 참고해 주세요.
 
+## [1.15.3] - 2026-07-01
+
+### 고침 (Fixed)
+
+- **우측 Command 한/영 토글이 특정 앱(특히 Edge 등 Chromium 계열)에서 "전환이 안 되던" 문제를 고쳤습니다.** on-device 로그로 확인한 근본 원인은 *이중 토글*이었습니다: Chromium 기반 앱은 우측 modifier **물리 누름 1회**에 대해 `flagsChanged` press 이벤트를 **2개**(on-device 측정 2~11ms 간격) 보내는데, 각 이벤트가 토글을 발동해 한→영→한으로 **즉시 원복**되어 전환이 안 된 것처럼 보였습니다. 같은 Edge라도 이벤트가 1개로 오는 필드는 정상이라 "되는 곳/안 되는 곳"이 섞여 나타났습니다. 직전 발동 후 80ms 이내의 재발동을 중복으로 보고 억제하는 **시간 디바운스**로 해결했습니다(사람의 의도적 재토글은 ≥150ms라 통과). 함께: 토글 감지의 모디파이어 상태 추적기를 activate/deactivate/발동 시 초기화해, 토글이 입력 소스를 전환하는 순간 뒤따르는 key-up이 누락되어 이후 토글이 씹히던(refocus로만 복구되던) 문제도 고쳤고, 우측 modifier가 keyCode로 감지되는 설정에서는 전역 IOKitty 모니터 폴백을 끄고 keyCode 경로를 단독 권위로 사용해 두 감지기 레이스로 인한 이중 토글 가능성도 제거했습니다. (`OSXCore/InputController.swift`, `OSXCore/InputMethodServer.swift`, `GureumTests/RightToggleKeyTests.swift`)
+
 ## [1.15.2] - 2026-06-19
 
 ### 고침 (Fixed)
