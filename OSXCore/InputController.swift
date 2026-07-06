@@ -50,7 +50,14 @@ enum InputEvent {
 @objc(GureumInputController)
 public class InputController: IMKInputController {
     var receiver: InputReceiver!
-    var lastFlags = NSEvent.ModifierFlags(rawValue: 0)
+    /// flagsChanged 전이 추적기. 예전 raw `lastFlags`는 리셋되지 않아, 토글이 입력소스를
+    /// 전환하는 순간 뒤따르는 key-up이 누락되면 모디파이어 비트가 wedge되어 이후 우측 Cmd
+    /// 토글이 조용히 씹혔다(refocus로만 복구). 이제 activate/deactivate/토글 발동 직후 reset.
+    var flagsTracker = ModifierFlagsTracker()
+
+    /// 직전 우측 한/영 토글 발동 시각. Chromium(Edge)이 물리 누름 1회에 flagsChanged press를
+    /// 2개 보내 이중 토글→즉시 원복시키는 것을, `isDuplicateToggleFire`로 시간 디바운스해 막는다.
+    var lastRightToggleFireAt: Date?
     var updating = false
 
     // MARK: - inline-direct-input state (DKST-style port, MIT)
@@ -64,6 +71,12 @@ public class InputController: IMKInputController {
     /// Per-client composition policy. Default true = safe (marked) fallback until computed.
     var useMarkedText = true
 
+    /// activateServer에서 `useMarkedText`를 계산할 때 `bundleIdentifier()`가 nil이라 분류가
+    /// 불완전했는지. nil이면 번들 기반 단계(terminal/chromium/seed/forced)가 전부 미스되어
+    /// known-marked 앱(예: Terminal)이 inline으로 오분류·고착될 수 있으므로, 번들 ID가
+    /// 잡히는 첫 키 입력에서 1회 재분류한다(인라인 한정).
+    var useMarkedTextNeedsReclassify = false
+
     /// 직전 인라인 렌더 직후의 기대 caret(selectedRange.location), 즉 directRange의 끝.
     /// ② 커서이동 무효화가 사용한다. nil = 추적 안 함.
     var expectedCaret: Int?
@@ -74,6 +87,17 @@ public class InputController: IMKInputController {
             return false
         }
         return client.attributedSubstring(from: range)?.string == expected
+    }
+
+    /// activate 시점에 bundleID가 nil이라 분류가 불완전했으면, 번들 ID가 잡히는 시점에
+    /// `useMarkedText`를 1회 재분류한다(조합 중이 아닐 때만). known-marked 앱이 inline으로
+    /// 오분류되어 그 포커스 세션 내내 고착되는 것을 막는다. marked 쪽으로 바뀌는 것이 안전.
+    func recomputeUseMarkedTextIfPending(client: (IMKTextInput & IMKUnicodeTextInput)) {
+        guard useMarkedTextNeedsReclassify, directRange == nil else { return }
+        let caps = LiveClientCapabilities(controller: self, client: client)
+        guard caps.bundleIdentifier != nil else { return } // 아직도 nil이면 다음 기회에
+        useMarkedText = classifyComposition(caps) == .marked
+        useMarkedTextNeedsReclassify = false
     }
 
     // MARK: - PHASE 2 B층: 런타임 append-only 학습 캐시 (세션 한정)
@@ -365,8 +389,7 @@ public extension InputController { // IMKServerInputHandleEvent
             return result.processed
         case .flagsChanged:
             dlog(DEBUG_INPUTCONTROLLER, "** InputController FLAGCHANGED -handleEvent:client: with event: %@ / key: %d / modifier: %lu / client: %@", event, -1, event.modifierFlags.rawValue, client.bundleIdentifier() ?? "(no client bundle)")
-            let changed = lastFlags.symmetricDifference(event.modifierFlags)
-            lastFlags = event.modifierFlags
+            let changed = flagsTracker.transition(to: event.modifierFlags)
 
             if changed.contains(.capsLock), Configuration.shared.enableCapslockToToggleInputMode {
                 if InputMethodServer.shared.io?.capsLockTriggered == true {
@@ -390,26 +413,52 @@ public extension InputController { // IMKServerInputHandleEvent
             //     secure=true, 터미널/비-터미널 모두 우측 Command가 keyCode=54로 도착).
             // 그래서 keyCode로 우측 토글 키를 감지한다. IOKitty는 keyCode가 안 오는 환경 폴백.
             let toggleUsage = Configuration.shared.rightToggleKey
-            if let toggleVK = toggleKeyVirtualKeyCode(forUsage: toggleUsage), Int(event.keyCode) == toggleVK {
-                // 이 keyCode 경로가 우측 토글 키를 권위적으로 처리한다. IOKitty가 (secure가
-                // 아닐 때) 세팅한 플래그는 다음 이벤트에서의 중복 토글을 막기 위해 소거한다.
+            if let toggleVK = toggleKeyVirtualKeyCode(forUsage: toggleUsage) {
+                // 우측 modifier가 keyCode로 감지 가능하면, 이 keyCode 경로가 토글을 **단독**
+                // 권위적으로 처리한다. IOKitty(전역 HID 모니터)가 세팅한 플래그는 소거만 하고
+                // (leak 방지) 폴백 토글은 **절대** 하지 않는다 — 두 감지기가 함께 켜지면
+                // 레이스로 이중 토글(전환 후 즉시 원복)이 난다. 특히 Chromium(Edge 등) 계열이
+                // 소스전환 후 추가 flagsChanged를 뿜으면 뒤늦게 세팅된 IOKitty 플래그가 keyCode≠VK
+                // 이벤트에서 폴백 토글 #2를 일으켰다. keyCode는 Secure Event Input에서도 전달되고
+                // IOKitty는 secure에서 차단되므로, 우측 modifier에겐 폴백이 불필요+유해하다.
+                // IOKitty(전역 HID 모니터)가 세팅한 플래그는 소거만 하고(leak 방지) 폴백
+                // 토글은 하지 않는다 — keyCode 경로가 단독 권위. 두 감지기 병존 시 레이스로
+                // 이중 토글이 났었다.
                 _ = InputMethodServer.shared.io?.resolveRightKeyPressed()
-                if rightToggleKeyPressedByKeyCode(eventKeyCode: Int(event.keyCode),
-                                                  changed: changed.rawValue,
-                                                  current: event.modifierFlags.rawValue,
-                                                  toggleKeyUsage: toggleUsage)
-                {
+                let isTogglePress = Int(event.keyCode) == toggleVK && rightToggleKeyPressedByKeyCode(
+                    eventKeyCode: Int(event.keyCode),
+                    changed: changed.rawValue,
+                    current: event.modifierFlags.rawValue,
+                    toggleKeyUsage: toggleUsage)
+                if isTogglePress {
+                    // Chromium(Edge)이 물리 누름 1회에 flagsChanged press를 2개(수 ms 간격) 보내
+                    // 이중 토글→즉시 원복시키던 것을 시간 디바운스로 억제한다. 사람 연타(≥150ms)는 통과.
+                    let now = Date()
+                    let sinceLast = lastRightToggleFireAt.map { now.timeIntervalSince($0) } ?? -1
+                    if isDuplicateToggleFire(sinceLastFire: sinceLast) {
+                        return true // 중복(원복 유발) — 이벤트는 소비하되 토글하지 않음
+                    }
+                    lastRightToggleFireAt = now
                     let result = receiver.input(event: .changeLayout(.toggleByRightKey, true), client: client)
-                    dlog(DEBUG_IOKIT_EVENT, "controller detected right toggle key via keyCode")
+                    // 토글 발동은 곧 입력소스 전환(TIS)이라, 뒤따르는 우측 Cmd key-up이 다른
+                    // 컨트롤러로 배달돼 누락될 수 있다. 여기서 추적기를 비워 다음 press가 정상
+                    // 전이로 잡히게 한다(누락된 release가 모디파이어를 wedge시키지 못하게).
+                    flagsTracker.reset()
                     return result.processed
                 }
                 return false
             }
 
-            // 폴백: keyCode가 전달되지 않는 환경을 위한 기존 IOKitty 경로.
+            // 폴백: 우측 modifier가 keyCode로 감지 불가한 설정(toggleVK==nil)에서만 IOKitty 사용.
             if InputMethodServer.shared.io?.resolveRightKeyPressed() == true {
+                let now = Date()
+                let sinceLast = lastRightToggleFireAt.map { now.timeIntervalSince($0) } ?? -1
+                if isDuplicateToggleFire(sinceLastFire: sinceLast) {
+                    return true // 중복 억제(원복 방지).
+                }
+                lastRightToggleFireAt = now
                 let result = receiver.input(event: .changeLayout(.toggleByRightKey, true), client: client)
-                dlog(DEBUG_IOKIT_EVENT, "controller detected right key (iokit fallback)")
+                flagsTracker.reset() // 위와 동일: 토글 후 missed key-up 방지.
                 return result.processed
             }
 
@@ -464,10 +513,16 @@ public extension InputController { // IMKStateSetting
     override func activateServer(_ sender: Any!) {
         dlog(true, "server activated")
         super.activateServer(sender)
+        // 포커스/모드 경계에서 모디파이어 누적 상태를 비운다. (refocus가 토글 먹통을
+        // 고치던 것과 동일한 리셋을 코드가 항상 수행 → 우측 Cmd 토글 wedge 방지.)
+        flagsTracker.reset()
         // 클라이언트 활성화 시 합성 표시 방식을 한 번 계산해 캐시한다.
         // (DKST처럼 클라이언트 단위로 캐시 — 키 입력마다 비공개 API를 질의하지 않는다.)
         let client = asClient(sender)
-        useMarkedText = classifyComposition(LiveClientCapabilities(controller: self, client: client)) == .marked
+        let caps = LiveClientCapabilities(controller: self, client: client)
+        useMarkedText = classifyComposition(caps) == .marked
+        // activate 순간 bundleID가 nil이면 분류가 불완전 → 첫 키 입력에서 재분류 예약.
+        useMarkedTextNeedsReclassify = (caps.bundleIdentifier == nil)
     }
 
     override func deactivateServer(_ sender: Any!) {
@@ -478,6 +533,7 @@ public extension InputController { // IMKStateSetting
         directRange = nil
         directText = ""
         expectedCaret = nil
+        flagsTracker.reset() // 비활성화 시에도 누적 상태를 비워 다음 활성화에서 wedge 방지.
         super.deactivateServer(sender)
     }
 }

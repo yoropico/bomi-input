@@ -97,6 +97,12 @@ public class InputReceiver: InputTextDelegate {
 
         dlog(DEBUG_LOGGING, "LOGGING::KEY::(%@)(%ld)(%lu)", string?.replacingOccurrences(of: "\n", with: "\\n") ?? "(nil)", keyCode.rawValue, flags.rawValue)
 
+        // activate 시점에 bundleID가 nil이라 미뤄둔 useMarkedText 재분류를, 번들 ID가 잡히고
+        // 조합 시작 전인 지금 1회 수행한다(Terminal 등 known-marked 앱의 inline 오분류 방지).
+        if Configuration.shared.inlineCompositionEnabled {
+            controller.recomputeUseMarkedTextIfPending(client: sender)
+        }
+
         let hadComposedString = !_internalComposedString.isEmpty
         let result = input2(text: string, keyCode: keyCode, modifiers: flags, client: sender)
 
