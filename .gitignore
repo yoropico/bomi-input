@@ -28,3 +28,4 @@ Crashlytics.framework
 .claude/settings.local.json
 .claude/logs/
 .claude/backups/
+.claude/.devmode-lastsave-*

@@ -228,6 +228,51 @@ func isDuplicateToggleFire(sinceLastFire interval: TimeInterval, window: TimeInt
     interval >= 0 && interval < window
 }
 
+/// 우측 한/영 토글의 `flagsChanged` 1건 처리 결과.
+enum RightToggleOutcome: Equatable {
+    case notPress // 우측 토글 키의 press가 아님 → 호출측은 이벤트를 넘긴다(false).
+    case suppressed // 중복(원복 유발) → 이벤트는 소비하되 토글하지 않는다(true).
+    case fire // 토글 발동 → 호출측이 changeLayout을 실행한다.
+}
+
+/// `handleEvent`의 우측 토글 `flagsChanged` 판정을 순수하게 캡슐화(테스트 가능하게).
+///
+/// `changed`는 호출측이 이미 `tracker.transition(to:)`로 계산해 넘긴다(capsLock 감지와 tracker를
+/// 공유하므로 전이 계산은 밖에서 1회만 한다). 이 함수는 press 판정 + 시간 디바운스만 하고,
+/// **발동·억제 어느 경로에서도 `tracker.reset()`으로 누적 상태를 비운다.**
+///
+/// 왜 억제 경로도 reset해야 하나(이번 회귀의 근본 원인): Chromium 계열, 또는 토글이 촉발하는
+/// 소스전환이 뿜는 추가 `flagsChanged`로 물리 누름 1회에 press 이벤트가 2개 올 때, 둘째 press는
+/// 이 디바운스에서 억제된다. 그런데 억제하면서 tracker를 reset하지 않으면 `transition`이 이미
+/// 세팅한 `lastFlags`(command 비트)가 눌린 채 남고, 토글이 소스를 전환하며 뒤따르는 key-up이 다른
+/// 컨트롤러로 배달돼 **누락**되면 그 비트가 wedge되어 이후 모든 press가 "전이 없음"으로 상쇄되어
+/// 씹힌다 — 증상: **한/영 무반응, refocus(=activate reset)로만 복구**. 발동 경로만 reset하고 억제
+/// 경로에서 빠뜨렸던 것이 원인이었다.
+func decideRightToggle(
+    tracker: inout ModifierFlagsTracker,
+    lastFireAt: inout Date?,
+    keyCode: Int,
+    changed: NSEvent.ModifierFlags,
+    current: NSEvent.ModifierFlags,
+    now: Date,
+    toggleVK: Int,
+    toggleUsage: Int,
+    window: TimeInterval = 0.08
+) -> RightToggleOutcome {
+    let isTogglePress = keyCode == toggleVK && rightToggleKeyPressedByKeyCode(
+        eventKeyCode: keyCode, changed: changed.rawValue, current: current.rawValue, toggleKeyUsage: toggleUsage
+    )
+    guard isTogglePress else { return .notPress }
+    let sinceLast = lastFireAt.map { now.timeIntervalSince($0) } ?? -1
+    if isDuplicateToggleFire(sinceLastFire: sinceLast, window: window) {
+        tracker.reset() // 억제 경로도 반드시 reset — 빠뜨리면 missed key-up이 wedge를 만든다.
+        return .suppressed
+    }
+    lastFireAt = now
+    tracker.reset()
+    return .fire
+}
+
 /*!
  @brief  공통적인 OSX의 입력기 구조를 다룬다.
 

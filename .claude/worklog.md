@@ -91,3 +91,65 @@
 - 2026-07-01: ROOT-CAUSED the recurring 'right-Cmd 한/영 toggle 안됨' (symptom: no response at all, refocus fixes it). NOT system-level non-delivery as prior session guessed — the flagsChanged DOES reach the IME, but InputController.lastFlags was never reset, so when a toggle-press switches the input source mid-press the following key-up is delivered elsewhere and the command bit gets WEDGED (stuck "down"). Every later press then cancels in `changed=symmetricDifference(lastFlags)` -> rightToggleKeyPressedByKeyCode false -> silently dropped. refocus fixes it because reactivation makes a fresh controller (lastFlags=0). WHY this fix: extracted lastFlags into resettable ModifierFlagsTracker (OSXCore/InputMethodServer.swift) and reset() at activate/deactivate/right-toggle-fire so a missed key-up can't wedge detection — codifying what refocus already does. TDD: RightToggleKeyTests testMissedReleaseWedgesToggleUntilReset reproduces the wedge deterministically (RED) and reset restores it (GREEN); 14/14 pass, Debug compile OK. PENDING: full OSXTests gate + Release install + on-device dogfood.
 - 2026-07-01 (incident+fix): While dogfooding the right-Cmd toggle wedge fix, my dev cycle DISRUPTED the live IME. Sequence that bit us: (1) `xcodebuild test` launches a DEBUG test-host bomi-input.app -> it popped a debug alert (assertionFailure/debug traps are compiled out in Release, live in Debug) + collided on IMKServer connection name 'GureumInputMethod_1_Connection' with the installed app; (2) my killall + `open` restart of the installed 1.15.2 left bomi WEDGED — selected but processing NO input ("보미만 입력 불가, 기본은 가능"; ABC/Apple worked, refocus did NOT help => process-level wedge, not orphaned app context). LESSON for CLAUDE.md: cp+killall+`open` reinstall can leave bomi wedged (IMK connection not cleanly re-established); a FULL process quit + relaunch reliably un-wedges (user confirmed "완전 종료 후 다시 실행하니 정상"). Also: NEVER run `xcodebuild test` (Debug test-host) against the live IME while the user is typing — it disrupts input; use compile-only `xcodebuild build` for verification and defer app-launching tests. RESOLUTION: built + clean-installed the fix as 1.15.3 (pid 52417, single instance, han3final selected), input restored. Toggle root-cause fix (ModifierFlagsTracker.reset at activate/deactivate/toggle-fire) is IN 1.15.3, UNCOMMITTED, pending on-device dogfood before commit. Interim unblock used: external TISSelectInputSource to ABC/Apple to bypass wedged bomi.
 - 2026-07-01 (DEFINITIVE root cause via on-device diag): The recurring 한/영 toggle failure is a DOUBLE-FIRE. File-logged toggle path (bomi_toggle_diag.log) proved: Chromium apps (com.microsoft.edgemac.Beta) emit TWO flagsChanged PRESS events (identical chg=0x100000 cur=0x100000, 2–11ms apart) for ONE physical right-Cmd press → toggle fires twice → 한→영→한 instant revert = "안됨". com.apple.Terminal emits ONE press → fires once → works. Edge intermittently emits 1 or 2 → "되는 필드/안되는 필드". IMPORTANT self-correction: my earlier flagsTracker post-fire reset (the wedge fix) RE-ZEROED lastFlags between the two dup events, making the 2nd compute changed=cmd (fresh transition) → it fired too. In the pre-session 1.15.2 (no post-fire reset) the 2nd dup saw changed=0 and was naturally suppressed, so 1.15.2's symptom was the WEDGE ("아무 반응 없음"), and my fix TRADED wedge→revert. FIX (v1.15.5): time-debounce — suppress a toggle fire within 80ms of the previous (isDuplicateToggleFire, InputMethodServer.swift); dup events (≤11ms) suppressed, human re-toggle (≥150ms) passes. Robust to BOTH bugs (dup-fire AND missed-release-wedge: next real press >80ms always fires). Also this session: made keyCode path sole toggle authority, disabled IOKitty fallback when a right-modifier is configured (removes a separate global-monitor race). Diag logging (toggleDiagLog) still IN the build — REMOVE before commit. UNCOMMITTED.
+2026-07-01 15:44 | [session end] reason=clear
+2026-07-01 16:18 | 한/영 toggle wedge RECURRED on 1.15.3 → root-caused + fixed as 1.15.4 (installed, pid 12049, fresh start-time verified). Symptom (user answers): 터미널(BCT — native app, NOT Chromium) 한/영 무반응, 평상시(비-secure) 발생, refocus로만 복구 = WEDGE. Ruled out: secure-input (평상시 발생 → not it), source-disabled (direct TIS query, not stale `defaults`: bomi .system + .han3final BOTH ENABLED). Root cause: a4bcfab added flagsTracker.reset() to the FIRE path but NOT the debounce SUPPRESS path (`return true`). A double-fire's 2nd press (Chromium OR the toggle's own source-switch-induced extra flagsChanged) is time-suppressed yet `transition` already set lastFlags=cmd and nothing reset it; a subsequent MISSED key-up then wedges it → next press computes changed=0 → 씹힘. This is the RESIDUAL wedge a4bcfab's debounce left behind (it only stopped the revert) — consistent with worklog line 93's dup analysis, not contradicting it. FIX: extracted handleEvent right-toggle branch to pure `decideRightToggle()` (InputMethodServer.swift) that reset()s on BOTH .fire and .suppressed; IOKitty fallback suppress path also reset. TDD: standalone repro (RED=wedge / GREEN=fire) → RightToggleKeyTests +3 (testDuplicateSuppressionResetsTrackerSoMissedKeyUpDoesNotWedge, ...CleanPressReleaseCycle..., ...DoubleFireSecondPressStillSuppressed), 20/20 pass; Release 1.15.4 built+installed LOGGING-FREE (dogfood first; add file-logging build only if it still recurs). UNCOMMITTED: OSXCore/InputController.swift, OSXCore/InputMethodServer.swift, GureumTests/RightToggleKeyTests.swift. Pending: on-device dogfood in BCT → then CHANGELOG 1.15.4 + commit/push/PR on yoros's go.
+2026-07-02 03:39 | [session end] reason=other
+
+## 2026-07-02 — 한/영 토글 재발: 두 케이스 분리 + 진단빌드 1.15.5-diag
+- User: "한영 전환 안됨 계속 발생". 증상 청취로 **두 개의 다른 버그**로 분리:
+  ① refocus로 복구 = tracker wedge (missed key-up으로 command 비트 wedge). 이 wedge 수정
+     (decideRightToggle + 억제-경로 reset)은 이미 작업트리에 있었으나 **빌드/설치된 적 없음**
+     (실행 중 1.15.4엔 심볼 없음) → 그래서 계속 재발. WHY: 고쳤다고 생각했지만 미배포.
+  ② hang 후 스스로 풀림 = 빠른 TISSelectInputSource 실패 → 느린 selectMode 폴백(~1초).
+- 셸에서 입력소스 enabled 상태 읽기가 모순(selected엔 bomi 있는데 enabled 목록엔 없음) →
+  런타임 TIS만 권위. 그래서 정적 판단 포기, 온-디바이스 파일로깅으로 전환(이 프로젝트 검증된 방법).
+- 진단빌드 1.15.5-diag 설치(pid 22331): selectInputSourceFast 경로(cachedFast/listFast/FALLBACK)
+  + 우측토글 판정(changed/cur/secure/outcome)을 ~/Library/Containers/.../Data/bomi_toggle_diag.log에 기록.
+  스레드 규약: 값은 메인에서 계산, bg큐는 파일쓰기만(off-main TIS SIGABRT 함정 회피).
+- DIAG/refactor 코드 UNCOMMITTED. 커밋 전 BOMI_TOGGLE_DIAG 로깅 제거. 라이브 IME라 xcodebuild test는
+  유저 타이핑 중 미실행(먹통 위험) — 유저 idle 때 RightToggleKeyTests 별도 실행 예정.
+2026-07-02 04:48 | [session end] reason=prompt_input_exit
+2026-07-02 04:48 | [session end] reason=resume
+- diag log round 1 (280 lines, 04:06-05:09) analyzed: FALLBACK=0, wedge-signature=0, every press
+  fire→SWITCH ok. Anomaly = repeated `SWITCH han3final` runs w/o intervening `system` + double-press
+  escape pattern (dead first press → working second press, Terminal 05:07:23 & 05:09:36-43).
+  HYPOTHESIS: composer.inputMode desync vs actual TIS source → toggle selects already-active source
+  (PHANTOM no-op) → 무반응; second press escapes. Detection layer exonerated. WHY diag2: round-1 log
+  lacked actual-source + focus visibility, cannot confirm desync.
+- Installed 1.15.5-diag2 (pid 94104): TOGGLEKEY +mode= (composer belief), SWITCH +before/after/PHANTOM
+  (actual TIS source), +ACTIVATE/+SETVALUE lines (only OS sync path for composer). Old log rotated
+  to bomi_toggle_diag.1.log.
+- diag2 round verdict (2559 lines): PHANTOM=0, FALLBACK=0, all switches applied — bomi toggle machinery
+  exonerated end-to-end. HARD EVIDENCE of external flip: SETVALUEs report han3final until 07:33:29, no
+  SWITCH after, yet 07:33:47 toggle logs before=system → actual source flipped han3final→system OUTSIDE
+  bomi (at a focus event 07:33:44). User's "안됨" = something external reverts the mode they set.
+  Karabiner checked: only RoyalTSX right_cmd→right_opt rule (benign, remote-session 한/영) — no F19 rule.
+  BUT macOS symbolic hotkey 60 (prev input source) = F19, ENABLED — suspicious leftover; custom keyboard
+  (vendor 8264) may emit F19 from a dedicated 한/영 key. No fast-revert (<1s) signature in log, so not a
+  per-press double-fire; flip correlates with ACTIVATE (focus) instead.
+- Installed 1.15.5-diag3 (pid 5423): +TISCHANGED lines (DistributedNotificationCenter,
+  kTISNotifySelectedKeyboardInputSourceChanged, main queue) log EVERY actual source change incl. external;
+  ACTIVATE/SETVALUE now carry actual=. Next occurrence pinpoints the flipper (timing vs keyup/focus).
+- CASE CLOSED: user revealed they run an auto input switcher → found **Input Source Pro** (pid 1140)
+  with DB rules (ZAPPRULE) forcing com.apple.Terminal AND com.yoropico.bct → bomi-input.system(영문).
+  Focus-correlated external flips fully explained; matches all evidence (Terminal-heavy, refocus-doesn't-
+  recover, intermittent). bomi toggle machinery exonerated (2559-line diag: PHANTOM/FALLBACK/wedge all 0).
+  WHY logged: 4 debug rounds burned on this — root causes were ① unshipped wedge fix ② external ISP rules.
+  Memory saved: hanyoung-recurrence-input-source-pro.md.
+- User quit Input Source Pro + removed from login items (verified: not running, not in login items).
+  Now dogfooding diag3 to confirm: no more external flips (TISCHANGED w/o SWITCH), no wedge recurrence.
+  Once clean → strip diag code, run RightToggleKeyTests + OSXTests, commit wedge fix, offer 올려.
+2026-07-02 07:55 | [session end] reason=prompt_input_exit
+2026-07-02 07:55 | [session end] reason=resume
+- USER CORRECTION: lived symptom = "버튼이 아예 동작 안 함" (dead press), NOT focus-revert. Log check:
+  fire:SWITCH = 94:94 / 163:163 / 34:34 across all three diag logs — every press that REACHED bomi
+  switched, zero dead fires. ∴ dead-button moments = press never delivered to bomi (system-level gap,
+  same conclusion as June marathon). ISP relevance reframed: it's a CGEvent-tap app — a slow/stalled tap
+  delays/drops key events system-wide (classic "hang then burst" = user's 2nd symptom) — PLUS the separate
+  focus-rule interference. Tap theory = plausible, unproven; ISP-off natural experiment decides. If dead
+  press recurs with ISP off: absence of TOGGLEKEY line at that instant proves non-delivery, TISCHANGED
+  shows any external flip.
+2026-07-02 16:54 | [session end] reason=other
+2026-07-14 | Stripped ALL BOMI_TOGGLE_DIAG instrumentation (InputMethodServer/InputController/InputReceiver — InputReceiver now identical to HEAD; removed the diag-only `import Carbon`). Kept the real fix: extracted the right-toggle flagsChanged decision into pure `decideRightToggle()` that reset()s the ModifierFlagsTracker on BOTH .fire AND .suppressed. Residual-wedge root cause (the recurring "터미널 한/영 무반응, refocus로만 복구"): a4bcfab reset only the FIRE path; a double-fire's 2nd press is time-suppressed but the tracker still held lastFlags=cmd, so a subsequent MISSED key-up wedged the bit → later presses computed changed=0 → 씹힘. Also reset on the IOKitty fallback suppress path for parity. Gate GREEN: RightToggleKeyTests 20/20 (incl. 3 new: DuplicateSuppressionResetsTracker…/CleanPressReleaseCycle…/DoubleFireSecondPressStillSuppressed) + OSXTests 102 run / 1 expected fail (GureumObjCTests testIPMDServerClientWrapper stale bomi_input-Swift.h) / 0 unexpected. Built + clean-installed diag-free 1.15.4 (pid verified fresh, binary strings show 0 bomi_toggle_diag). CHANGELOG 1.15.4 added. Committing wedge fix. NOTE: the separate dead-press/non-delivery question (Input Source Pro / CGEvent-tap, worklog 07-02) is EXTERNAL and unaffected by this commit — awaiting user's ISP-off dogfood.
+2026-07-14 05:17 | [push] fix/hanyoung-toggle-double-fire @ 57b33d8 -- fix(ime): reset toggle tracker on debounce-suppress path — kill residual right-Cmd 한/영 wedge
+2026-07-14 | [작업 종료] Pushed branch + opened PR #7 (https://github.com/yoropico/bomi-input/pull/7). Fork gotcha hit: `gh pr create` defaults base to upstream gureum/gureum → must pass `--repo yoropico/bomi-input` (recorded in CLAUDE.md git section, commit 17f77d0). Task closed with PR #7 OPEN, awaiting user review/merge. Only external follow-up remains (dead-press/ISP dogfood).

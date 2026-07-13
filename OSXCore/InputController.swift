@@ -414,39 +414,27 @@ public extension InputController { // IMKServerInputHandleEvent
             // 그래서 keyCode로 우측 토글 키를 감지한다. IOKitty는 keyCode가 안 오는 환경 폴백.
             let toggleUsage = Configuration.shared.rightToggleKey
             if let toggleVK = toggleKeyVirtualKeyCode(forUsage: toggleUsage) {
-                // 우측 modifier가 keyCode로 감지 가능하면, 이 keyCode 경로가 토글을 **단독**
-                // 권위적으로 처리한다. IOKitty(전역 HID 모니터)가 세팅한 플래그는 소거만 하고
-                // (leak 방지) 폴백 토글은 **절대** 하지 않는다 — 두 감지기가 함께 켜지면
-                // 레이스로 이중 토글(전환 후 즉시 원복)이 난다. 특히 Chromium(Edge 등) 계열이
-                // 소스전환 후 추가 flagsChanged를 뿜으면 뒤늦게 세팅된 IOKitty 플래그가 keyCode≠VK
-                // 이벤트에서 폴백 토글 #2를 일으켰다. keyCode는 Secure Event Input에서도 전달되고
-                // IOKitty는 secure에서 차단되므로, 우측 modifier에겐 폴백이 불필요+유해하다.
-                // IOKitty(전역 HID 모니터)가 세팅한 플래그는 소거만 하고(leak 방지) 폴백
-                // 토글은 하지 않는다 — keyCode 경로가 단독 권위. 두 감지기 병존 시 레이스로
-                // 이중 토글이 났었다.
+                // 우측 modifier가 keyCode로 감지 가능하면 이 keyCode 경로가 토글을 **단독** 권위로
+                // 처리한다. IOKitty(전역 HID 모니터)가 세팅한 플래그는 소거만 하고(leak 방지) 폴백
+                // 토글은 하지 않는다 — 두 감지기 병존 시 레이스로 이중 토글(전환 후 즉시 원복)이
+                // 났었다. keyCode는 Secure Event Input에서도 전달되고 IOKitty는 secure에서 차단되므로,
+                // 우측 modifier에겐 폴백이 불필요+유해하다. press 판정·시간 디바운스·tracker 초기화
+                // (missed key-up wedge 방지)는 decideRightToggle이 일괄 처리한다 — 발동/억제 어느
+                // 경로에서도 tracker를 reset한다(억제 경로 reset 누락이 wedge 재발의 원인이었다).
                 _ = InputMethodServer.shared.io?.resolveRightKeyPressed()
-                let isTogglePress = Int(event.keyCode) == toggleVK && rightToggleKeyPressedByKeyCode(
-                    eventKeyCode: Int(event.keyCode),
-                    changed: changed.rawValue,
-                    current: event.modifierFlags.rawValue,
-                    toggleKeyUsage: toggleUsage)
-                if isTogglePress {
-                    // Chromium(Edge)이 물리 누름 1회에 flagsChanged press를 2개(수 ms 간격) 보내
-                    // 이중 토글→즉시 원복시키던 것을 시간 디바운스로 억제한다. 사람 연타(≥150ms)는 통과.
-                    let now = Date()
-                    let sinceLast = lastRightToggleFireAt.map { now.timeIntervalSince($0) } ?? -1
-                    if isDuplicateToggleFire(sinceLastFire: sinceLast) {
-                        return true // 중복(원복 유발) — 이벤트는 소비하되 토글하지 않음
-                    }
-                    lastRightToggleFireAt = now
+                let outcome = decideRightToggle(tracker: &flagsTracker, lastFireAt: &lastRightToggleFireAt,
+                                                keyCode: Int(event.keyCode), changed: changed,
+                                                current: event.modifierFlags, now: Date(),
+                                                toggleVK: toggleVK, toggleUsage: toggleUsage)
+                switch outcome {
+                case .fire:
                     let result = receiver.input(event: .changeLayout(.toggleByRightKey, true), client: client)
-                    // 토글 발동은 곧 입력소스 전환(TIS)이라, 뒤따르는 우측 Cmd key-up이 다른
-                    // 컨트롤러로 배달돼 누락될 수 있다. 여기서 추적기를 비워 다음 press가 정상
-                    // 전이로 잡히게 한다(누락된 release가 모디파이어를 wedge시키지 못하게).
-                    flagsTracker.reset()
                     return result.processed
+                case .suppressed:
+                    return true // 중복(원복 유발) — 소비하되 토글 안 함. tracker는 decide가 reset.
+                case .notPress:
+                    return false
                 }
-                return false
             }
 
             // 폴백: 우측 modifier가 keyCode로 감지 불가한 설정(toggleVK==nil)에서만 IOKitty 사용.
@@ -454,6 +442,7 @@ public extension InputController { // IMKServerInputHandleEvent
                 let now = Date()
                 let sinceLast = lastRightToggleFireAt.map { now.timeIntervalSince($0) } ?? -1
                 if isDuplicateToggleFire(sinceLastFire: sinceLast) {
+                    flagsTracker.reset() // 억제 경로도 reset — keyCode 경로와 동일(missed key-up wedge 방지).
                     return true // 중복 억제(원복 방지).
                 }
                 lastRightToggleFireAt = now

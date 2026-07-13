@@ -157,4 +157,53 @@ final class RightToggleKeyTests: XCTestCase {
         // No previous fire → caller passes a negative sentinel → never a duplicate.
         XCTAssertFalse(isDuplicateToggleFire(sinceLastFire: -1, window: 0.08))
     }
+
+    // MARK: decideRightToggle — 억제 경로가 tracker를 reset하지 않아 생기던 wedge
+    // (재발한 "터미널에서 한/영 무반응, refocus로만 복구"의 근본 원인)
+
+    // handleEvent의 우측 토글 flagsChanged 처리를 실제 순서(transition → decideRightToggle)대로
+    // 1건 실행하는 헬퍼. transition은 capsLock 감지와 tracker를 공유하므로 decide 밖에서 부른다.
+    private func toggleStep(_ tracker: inout ModifierFlagsTracker, _ lastFireAt: inout Date?,
+                            keyCode: Int, flags: UInt, now: Date) -> RightToggleOutcome {
+        let f = NSEvent.ModifierFlags(rawValue: flags)
+        let changed = tracker.transition(to: f)
+        return decideRightToggle(tracker: &tracker, lastFireAt: &lastFireAt,
+                                 keyCode: keyCode, changed: changed, current: f, now: now,
+                                 toggleVK: vkRightCommand, toggleUsage: kHIDUsage_KeyboardRightGUI)
+    }
+
+    func testDuplicateSuppressionResetsTrackerSoMissedKeyUpDoesNotWedge() {
+        var tracker = ModifierFlagsTracker()
+        var lastFireAt: Date?
+        let t0 = Date(timeIntervalSince1970: 1000)
+
+        // 물리 누름 1회가 flagsChanged press 이벤트 2개로 도착(double-fire): 첫 이벤트는 발동,
+        // 둘째(윈도 내)는 원복을 막기 위해 중복 억제된다.
+        XCTAssertEqual(toggleStep(&tracker, &lastFireAt, keyCode: vkRightCommand, flags: cmd, now: t0), .fire)
+        XCTAssertEqual(toggleStep(&tracker, &lastFireAt, keyCode: vkRightCommand, flags: cmd, now: t0.addingTimeInterval(0.005)), .suppressed)
+
+        // key-up이 MISSED된다(토글이 mid-press로 입력소스를 전환 → release가 다른 컨트롤러로 배달).
+        // 억제 경로가 tracker를 reset하지 않으면 lastFlags에 command 비트가 남아, 다음 press가
+        // "전이 없음"으로 상쇄되어 씹힌다(refocus로만 복구) — 이 회귀의 정확한 재현.
+        XCTAssertEqual(toggleStep(&tracker, &lastFireAt, keyCode: vkRightCommand, flags: cmd, now: t0.addingTimeInterval(1.0)), .fire,
+                       "억제 경로가 tracker를 reset해야 missed key-up 뒤 다음 press가 wedge되지 않는다")
+    }
+
+    func testCleanPressReleaseCycleFiresEveryDown() {
+        var tracker = ModifierFlagsTracker()
+        var lastFireAt: Date?
+        let t0 = Date(timeIntervalSince1970: 2000)
+        XCTAssertEqual(toggleStep(&tracker, &lastFireAt, keyCode: vkRightCommand, flags: cmd, now: t0), .fire)
+        XCTAssertEqual(toggleStep(&tracker, &lastFireAt, keyCode: vkRightCommand, flags: 0, now: t0.addingTimeInterval(0.05)), .notPress) // release
+        XCTAssertEqual(toggleStep(&tracker, &lastFireAt, keyCode: vkRightCommand, flags: cmd, now: t0.addingTimeInterval(1.0)), .fire)
+    }
+
+    func testDoubleFireSecondPressStillSuppressed() {
+        var tracker = ModifierFlagsTracker()
+        var lastFireAt: Date?
+        let t0 = Date(timeIntervalSince1970: 3000)
+        XCTAssertEqual(toggleStep(&tracker, &lastFireAt, keyCode: vkRightCommand, flags: cmd, now: t0), .fire)
+        // 원복을 유발하던 둘째 press는 수정 후에도 여전히 억제되어야 한다(수정이 억제를 깨지 않음).
+        XCTAssertEqual(toggleStep(&tracker, &lastFireAt, keyCode: vkRightCommand, flags: cmd, now: t0.addingTimeInterval(0.005)), .suppressed)
+    }
 }
