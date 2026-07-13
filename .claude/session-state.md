@@ -1,4 +1,18 @@
 ## Session state (devmode)
+- **2026-07-14 (RESOLVED + COMMITTED — residual right-Cmd 한/영 wedge fixed; committed `aca2b13`, clean 1.15.4 installed, NOT pushed).**
+  Finished the wedge fix that a4bcfab's debounce left behind and had been living UNCOMMITTED (buried under 5 diag-build sessions).
+  Root cause of the recurring "터미널 한/영 무반응, refocus로만 복구": a4bcfab reset `ModifierFlagsTracker` on the FIRE path only;
+  a double-fire's 2nd flagsChanged press is time-suppressed but the tracker still held lastFlags=command, so a subsequent MISSED
+  key-up (toggle switches the input source mid-press → release delivered to another controller) wedged the bit → later presses
+  compute changed=0 → 씹힘. FIX: extracted the right-toggle flagsChanged decision into pure `decideRightToggle()` that `reset()`s
+  the tracker on BOTH `.fire` AND `.suppressed`; mirrored the reset on the IOKitty fallback suppress path. This session: stripped
+  ALL `BOMI_TOGGLE_DIAG` instrumentation (InputMethodServer/InputController/InputReceiver — InputReceiver back to HEAD, removed
+  diag-only `import Carbon`); Release compile GREEN; gate GREEN (`RightToggleKeyTests` 20/20 incl. 3 new wedge tests, `OSXTests`
+  102 run / 1 expected fail [GureumObjCTests stale header] / 0 unexpected); built + clean-installed **1.15.4** (diag-free, binary
+  strings show 0 bomi_toggle_diag, fresh pid verified); CHANGELOG 1.15.4. Commit `aca2b13` = code+tests+CHANGELOG; worklog+this
+  session-state saved separately (Doc-Lang: ko). NEXT: user "올려" → push `fix/hanyoung-toggle-double-fire` + PR to main. STILL
+  OPEN (external, NOT this commit): dead-press/non-delivery (Input Source Pro / CGEvent-tap, worklog 07-02) — awaiting user's
+  ISP-off dogfood; if dead-press recurs with ISP off, it's system-level non-delivery, not bomi code.
 - **2026-07-01 (RESOLVED — right-Cmd 한/영 double-fire fixed via time-debounce; committed a4bcfab, clean 1.15.3 installed).**
   Root cause CONFIRMED via on-device file log (bomi_toggle_diag.log): Chromium apps (Edge = com.microsoft.edgemac) emit **TWO**
   flagsChanged PRESS events (identical changed/current, 2–11ms apart) per ONE physical right-Cmd press → toggle fires twice →
