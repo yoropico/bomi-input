@@ -73,3 +73,8 @@ open "/Library/Input Methods/bomi-input.app"
 ## git
 One plain commit, explicit `git add` paths, no reset/amend/rebase. Push to `main` needs fresh
 per-instance authorization each time. Commit messages in English.
+- **PR gotcha (this is a FORK of `gureum/gureum`).** `gh pr create` defaults its base to the
+  UPSTREAM (`gureum/gureum:main`), so a plain `gh pr create --base main` fails with a malformed
+  GraphQL error ("Head/Base sha can't be blank … No commits between main and … Head ref must be a
+  branch"). ALWAYS scope it to the fork: `gh pr create --repo yoropico/bomi-input --base main
+  --head <branch> …`. (Bit me on PR #7.)
