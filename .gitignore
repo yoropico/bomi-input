@@ -13,3 +13,6 @@ Bomi.app/
 # Xcode (not used, but just in case)
 xcuserdata/
 *.xcworkspace
+
+# SDD scratch
+.superpowers/
