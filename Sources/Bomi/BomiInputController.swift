@@ -17,8 +17,9 @@ final class BomiInputController: IMKInputController {
     private var composer = HangulComposer()
     private var gate = ToggleGate()
 
-    /// The active input source IS the Han/Eng state — macOS owns it. IMK reports
-    /// it via `setValue(_:forTag:client:)` with `kTextServiceInputModePropertyTag`.
+    /// The active input source is the Han/Eng state. Kept in sync by reading it
+    /// back from TIS (see `ModeSwitcher.currentMode()`) — NOT from IMK's
+    /// `setValue(_:forTag:client:)`, which does not reliably report mode changes.
     private var mode: InputMode = .korean
 
     /// Keys that end/interrupt composition and are handled by the app itself:
@@ -70,10 +71,13 @@ final class BomiInputController: IMKInputController {
             // Consume it — toggling again would flip straight back.
             return true
         case .fire:
-            // Commit what's in flight, then let macOS do the switch. `mode` is not
-            // set here — IMK reports the new mode via setValue(_:forTag:client:).
             flush(client)
-            ModeSwitcher.select(mode.other) { id in client.selectMode(id) }
+            let target = mode.other
+            ModeSwitcher.select(target) { id in client.selectMode(id) }
+            // Read the truth back from TIS. Waiting for setValue would be a bug:
+            // IMK does not deliver it for roman→korean, so `mode` would stick and
+            // every later toggle would re-select the already-active source.
+            mode = ModeSwitcher.currentMode() ?? target
             return true
         }
     }
@@ -135,8 +139,9 @@ final class BomiInputController: IMKInputController {
         }
     }
 
-    /// IMK tells us which of our modes is active here. This is the ONLY place
-    /// `mode` changes.
+    /// IMK reports the active mode here — but only sometimes (korean→roman yes,
+    /// roman→korean no). Treat it as a hint that agrees with TIS, never as the
+    /// only source; the toggle path and `activateServer` read TIS directly.
     nonisolated override func setValue(_ value: Any!, forTag tag: Int, client sender: Any!) {
         let boxed = UncheckedSendableBox(value: sender)
         let boxedValue = UncheckedSendableBox(value: value)
@@ -145,7 +150,7 @@ final class BomiInputController: IMKInputController {
                 let newMode = InputMode.from(id: boxedValue.value as? String)
                 if newMode != self.mode {
                     self.mode = newMode
-                    // A mode change means the key-up of the toggle key went elsewhere.
+                    // A mode change means the toggle key's key-up went elsewhere.
                     self.gate.reset()
                     // Never carry a half-composed syllable across a language change.
                     if let client = self.client(boxed.value) {
@@ -168,7 +173,8 @@ final class BomiInputController: IMKInputController {
             // Clear accumulated modifier state: a key-up delivered to another
             // controller must not wedge the next press.
             self.gate.reset()
-            // macOS decides which mode activates; it reports it via setValue.
+            // Trust TIS, not setValue.
+            if let active = ModeSwitcher.currentMode() { self.mode = active }
             _ = self.composer.flush()
         }
     }
