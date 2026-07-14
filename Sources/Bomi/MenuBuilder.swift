@@ -5,7 +5,7 @@ enum MenuBuilder {
     static func build(mode: InputMode) -> NSMenu {
         let menu = NSMenu(title: "Bomi")
 
-        let current = NSMenuItem(title: mode == .korean ? "한글 (세벌식 최종)" : "로마자 (English)",
+        let current = NSMenuItem(title: mode == .korean ? "세벌식 최종" : "영어",
                                  action: nil, keyEquivalent: "")
         current.isEnabled = false
         menu.addItem(current)
