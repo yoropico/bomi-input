@@ -1,5 +1,6 @@
 import AppKit
 import InputMethodKit
+import Carbon
 import BomiEngine
 import BomiCore
 
@@ -14,10 +15,11 @@ private nonisolated struct UncheckedSendableBox<Value>: @unchecked Sendable {
 @objc(BomiInputController)
 final class BomiInputController: IMKInputController {
     private var composer = HangulComposer()
-    private let language = LanguageMode()
-    private var korean = false
-    private var appID: String?
     private var gate = ToggleGate()
+
+    /// The active input source IS the Han/Eng state — macOS owns it. IMK reports
+    /// it via `setValue(_:forTag:client:)` with `kTextServiceInputModePropertyTag`.
+    private var mode: InputMode = .korean
 
     /// Keys that end/interrupt composition and are handled by the app itself:
     /// Enter(0x24), Return(0x4C), Tab(0x30), Escape(0x35), arrows(0x7B-0x7E), space(0x31).
@@ -45,7 +47,7 @@ final class BomiInputController: IMKInputController {
         client.insertText(text, replacementRange: noRange)
     }
 
-    /// Flush any in-progress syllable to the client. Used on blur/commit.
+    /// Flush any in-progress syllable to the client. Used on blur/commit/mode change.
     private func flush(_ client: IMKTextInput) {
         let tail = composer.flush()
         if !tail.isEmpty { client.insertText(tail, replacementRange: noRange) }
@@ -55,18 +57,18 @@ final class BomiInputController: IMKInputController {
         let isToggleKey = keyCode == Preferences.shared.toggleKeyCode
         let toggleKeyDown = modifierFlags.contains(.command)
         let otherModifiers = !modifierFlags.intersection([.shift, .control, .option]).isEmpty
-        if gate.flagsChanged(isToggleKey: isToggleKey, toggleKeyDown: toggleKeyDown,
-                             otherModifiersPresent: otherModifiers) {
-            flush(client)
-            language.toggle(forApp: appID)
-            korean = language.isKorean(forApp: appID)
-        }
+        guard gate.flagsChanged(isToggleKey: isToggleKey, toggleKeyDown: toggleKeyDown,
+                                otherModifiersPresent: otherModifiers) else { return }
+
+        // Commit what's in flight, then hand the switch to macOS. `mode` is not set
+        // here — IMK reports the new mode back through setValue(_:forTag:client:).
+        flush(client)
+        ModeSwitcher.select(mode.other) { id in client.selectMode(id) }
     }
 
     private func handleKeyEvent(keyCode: UInt16, flags: NSEvent.ModifierFlags, client: IMKTextInput) -> Bool {
         // Any non-modifier keyDown means Right-Command (if held) is part of a chord,
         // not a bare tap — disarm so releasing it does NOT fire the Han/Eng toggle.
-        // (e.g. Right-Command + C to copy must not silently flip the input language.)
         gate.chordInterrupt()
 
         // Modifiers other than Shift: commit and pass through (e.g. Cmd+C).
@@ -75,7 +77,8 @@ final class BomiInputController: IMKInputController {
             return false
         }
 
-        if !korean {
+        // Roman mode: we stay active (so Right-Command still reaches us) but type nothing.
+        if mode != .korean {
             flush(client)
             return false
         }
@@ -126,15 +129,37 @@ final class BomiInputController: IMKInputController {
         }
     }
 
+    /// IMK tells us which of our modes is active here. This is the ONLY place
+    /// `mode` changes.
+    nonisolated override func setValue(_ value: Any!, forTag tag: Int, client sender: Any!) {
+        let boxed = UncheckedSendableBox(value: sender)
+        let boxedValue = UncheckedSendableBox(value: value)
+        if tag == kTextServiceInputModePropertyTag {
+            MainActor.assumeIsolated {
+                let newMode = InputMode.from(id: boxedValue.value as? String)
+                if newMode != self.mode {
+                    self.mode = newMode
+                    // Never carry a half-composed syllable across a language change.
+                    if let client = self.client(boxed.value) {
+                        self.flush(client)
+                    } else {
+                        _ = self.composer.flush()
+                    }
+                }
+            }
+        }
+        super.setValue(value, forTag: tag, client: sender)
+    }
+
     nonisolated override func recognizedEvents(_ sender: Any!) -> Int {
         Int(NSEvent.EventTypeMask.keyDown.rawValue | NSEvent.EventTypeMask.flagsChanged.rawValue)
     }
 
     nonisolated override func activateServer(_ sender: Any!) {
-        let boxed = UncheckedSendableBox(value: sender)
         MainActor.assumeIsolated {
-            self.appID = (boxed.value as? IMKTextInput)?.bundleIdentifier()
-            self.korean = self.language.isKorean(forApp: self.appID)
+            // macOS decides which mode activates; it reports it via setValue.
+            // Just make sure no stale composition survives the activation.
+            _ = self.composer.flush()
         }
     }
 
@@ -154,13 +179,8 @@ final class BomiInputController: IMKInputController {
 
     nonisolated override func menu() -> NSMenu! {
         let boxed: UncheckedSendableBox<NSMenu> = MainActor.assumeIsolated {
-            UncheckedSendableBox(value: MenuBuilder.build(korean: self.korean, target: self))
+            UncheckedSendableBox(value: MenuBuilder.build(mode: self.mode))
         }
         return boxed.value
-    }
-
-    @objc func togglePerAppMemory(_ sender: NSMenuItem) {
-        let d = UserDefaults.standard
-        d.set(!Preferences.shared.perAppMemory, forKey: "perAppMemory")
     }
 }

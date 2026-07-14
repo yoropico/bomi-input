@@ -7,10 +7,9 @@ import Foundation
     d.removePersistentDomain(forName: "bomi.test.prefdefault")
     let p = Preferences(defaults: d)
     #expect(p.toggleKeyCode == 0x36)
-    #expect(p.perAppMemory == true)
 }
 
-@Test func toggleKeyCodeClampsOutOfRange() {   // #7: must not trap on a bad stored value
+@Test func toggleKeyCodeClampsOutOfRange() {   // must not trap on a bad stored value
     let d = UserDefaults(suiteName: "bomi.test.prefrange")!
     d.removePersistentDomain(forName: "bomi.test.prefrange")
     d.set(999_999, forKey: "toggleKeyCode")   // > UInt16.max

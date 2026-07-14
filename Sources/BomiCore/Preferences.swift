@@ -10,11 +10,10 @@ public final class Preferences: @unchecked Sendable {
     /// instead of the process-wide standard store.
     public init(defaults: UserDefaults = .standard) {
         self.d = defaults
-        d.register(defaults: ["toggleKeyCode": 0x36, "perAppMemory": true])
+        d.register(defaults: ["toggleKeyCode": 0x36])
     }
 
     /// `UInt16(exactly:)` (not the trapping `UInt16(_:)`) so an out-of-range
     /// stored value can never crash the IME — falls back to Right Command.
     public var toggleKeyCode: UInt16 { UInt16(exactly: d.integer(forKey: "toggleKeyCode")) ?? 0x36 }
-    public var perAppMemory: Bool { d.bool(forKey: "perAppMemory") }
 }
