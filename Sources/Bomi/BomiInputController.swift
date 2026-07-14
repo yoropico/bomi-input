@@ -61,6 +61,11 @@ final class BomiInputController: IMKInputController {
     }
 
     private func handleKeyEvent(keyCode: UInt16, flags: NSEvent.ModifierFlags, client: IMKTextInput) -> Bool {
+        // Any non-modifier keyDown means Right-Command (if held) is part of a chord,
+        // not a bare tap — disarm so releasing it does NOT fire the Han/Eng toggle.
+        // (e.g. Right-Command + C to copy must not silently flip the input language.)
+        toggleArmed = false
+
         // Modifiers other than Shift: commit and pass through (e.g. Cmd+C).
         if flags.contains(.command) || flags.contains(.control) || flags.contains(.option) {
             flush(client)

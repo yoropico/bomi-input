@@ -81,7 +81,9 @@ environment and must be run by a human after `./Scripts/install.sh`:
    ㄺ → ㄹ).
 4. **Han/Eng toggle**: tap Right Command alone (no other key) — expect the
    mode to flip between Korean and English; type a few letters after each
-   toggle to confirm.
+   toggle to confirm. Also confirm the chord guard: **Right Command + C
+   (copy) then release Right Command must NOT toggle Han/Eng; a lone Right
+   Command tap MUST toggle.**
 5. **Per-app memory**: set one app to Korean and another to English, then
    switch between them (Cmd-Tab) — expect each app to remember its own
    mode.
