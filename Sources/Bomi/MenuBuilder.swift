@@ -1,4 +1,5 @@
 import AppKit
+import BomiCore
 
 enum MenuBuilder {
     static func build(korean: Bool, target: AnyObject) -> NSMenu {

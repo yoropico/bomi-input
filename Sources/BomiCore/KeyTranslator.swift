@@ -1,7 +1,7 @@
 import Foundation
 
-enum KeyTranslator {
-    static let rightCommandKeyCode: UInt16 = 0x36
+public enum KeyTranslator {
+    public static let rightCommandKeyCode: UInt16 = 0x36
 
     // US ANSI virtual keycode -> (unshifted, shifted) ASCII.
     private static let table: [UInt16: (UInt32, UInt32)] = [
@@ -20,7 +20,7 @@ enum KeyTranslator {
 
     /// US-QWERTY physical ASCII, honoring Shift only. Returns nil for non-character keys
     /// (space, return, arrows, etc. — the caller handles those explicitly).
-    static func ascii(keyCode: UInt16, shift: Bool) -> UInt32? {
+    public static func ascii(keyCode: UInt16, shift: Bool) -> UInt32? {
         guard let (lo, hi) = table[keyCode] else { return nil }
         return shift ? hi : lo
     }

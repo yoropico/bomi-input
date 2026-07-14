@@ -1,6 +1,7 @@
 import AppKit
 import InputMethodKit
 import BomiEngine
+import BomiCore
 
 /// IMK always invokes `handle(_:client:)` on the main thread, but the ObjC
 /// `sender` parameter isn't `Sendable`. This box lets us carry it across the
@@ -16,7 +17,11 @@ final class BomiInputController: IMKInputController {
     private let language = LanguageMode()
     private var korean = false
     private var appID: String?
-    private var toggleArmed = false
+    private var gate = ToggleGate()
+
+    /// Keys that end/interrupt composition and are handled by the app itself:
+    /// Enter(0x24), Return(0x4C), Tab(0x30), Escape(0x35), arrows(0x7B-0x7E), space(0x31).
+    private static let passthroughKeys: Set<UInt16> = [0x24, 0x4C, 0x30, 0x35, 0x7B, 0x7C, 0x7D, 0x7E, 0x31]
 
     nonisolated override init() {
         super.init()
@@ -47,13 +52,11 @@ final class BomiInputController: IMKInputController {
     }
 
     private func handleToggleFlags(keyCode: UInt16, modifierFlags: NSEvent.ModifierFlags, client: IMKTextInput) {
-        guard keyCode == Preferences.shared.toggleKeyCode else { toggleArmed = false; return }
-        // .command bit present on the right-cmd change means key-down; absent means key-up.
-        let down = modifierFlags.contains(.command)
-        if down {
-            toggleArmed = true
-        } else if toggleArmed {
-            toggleArmed = false
+        let isToggleKey = keyCode == Preferences.shared.toggleKeyCode
+        let toggleKeyDown = modifierFlags.contains(.command)
+        let otherModifiers = !modifierFlags.intersection([.shift, .control, .option]).isEmpty
+        if gate.flagsChanged(isToggleKey: isToggleKey, toggleKeyDown: toggleKeyDown,
+                             otherModifiersPresent: otherModifiers) {
             flush(client)
             language.toggle(forApp: appID)
             korean = language.isKorean(forApp: appID)
@@ -64,7 +67,7 @@ final class BomiInputController: IMKInputController {
         // Any non-modifier keyDown means Right-Command (if held) is part of a chord,
         // not a bare tap — disarm so releasing it does NOT fire the Han/Eng toggle.
         // (e.g. Right-Command + C to copy must not silently flip the input language.)
-        toggleArmed = false
+        gate.chordInterrupt()
 
         // Modifiers other than Shift: commit and pass through (e.g. Cmd+C).
         if flags.contains(.command) || flags.contains(.control) || flags.contains(.option) {
@@ -84,9 +87,7 @@ final class BomiInputController: IMKInputController {
             if composer.backspace() { showPreedit(client); return true }
             return false
         }
-        // Enter(0x24), Return(0x4C), Tab(0x30), Escape(0x35), arrows(0x7B-0x7E), space(0x31)
-        let passthrough: Set<UInt16> = [0x24, 0x4C, 0x30, 0x35, 0x7B, 0x7C, 0x7D, 0x7E, 0x31]
-        if passthrough.contains(keyCode) {
+        if Self.passthroughKeys.contains(keyCode) {
             flush(client)
             return false   // let the app handle the key itself
         }
@@ -140,14 +141,14 @@ final class BomiInputController: IMKInputController {
     nonisolated override func commitComposition(_ sender: Any!) {
         let boxed = UncheckedSendableBox(value: sender)
         MainActor.assumeIsolated {
-            if let client = self.client(boxed.value) { self.flush(client) }
+            if let client = self.client(boxed.value) { self.flush(client) } else { _ = self.composer.flush() }
         }
     }
 
     nonisolated override func deactivateServer(_ sender: Any!) {
         let boxed = UncheckedSendableBox(value: sender)
         MainActor.assumeIsolated {
-            if let client = self.client(boxed.value) { self.flush(client) }
+            if let client = self.client(boxed.value) { self.flush(client) } else { _ = self.composer.flush() }
         }
     }
 
