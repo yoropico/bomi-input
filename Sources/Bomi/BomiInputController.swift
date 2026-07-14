@@ -59,9 +59,10 @@ final class BomiInputController: IMKInputController {
     /// Returns whether the event was consumed.
     private func handleToggleFlags(keyCode: UInt16, modifierFlags: NSEvent.ModifierFlags,
                                    client: IMKTextInput) -> Bool {
+        let toggleKey = Preferences.shared.toggleKeyCode(forApp: client.bundleIdentifier())
         let outcome = gate.flagsChanged(keyCode: keyCode,
                                         flagsRaw: modifierFlags.rawValue,
-                                        toggleKeyCode: Preferences.shared.toggleKeyCode,
+                                        toggleKeyCode: toggleKey,
                                         now: ProcessInfo.processInfo.systemUptime)
         switch outcome {
         case .notPress:
