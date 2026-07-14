@@ -1,0 +1,11 @@
+## Session state (devmode)
+- Updated: 2026-07-14 02:20
+- Goal: <task: sebeolsik-mvp>
+- Branch: 
+- Mental model: 
+- Why: 
+- Decisions: 
+- Gotchas: 
+- Files: 
+- Next: 
+- Open: 

@@ -12,8 +12,8 @@
 
 - swift-tools-version **6.2**; `platforms: [.macOS(.v14)]`; must run on macOS 26.
 - `BomiEngine` target: **Foundation only, zero third-party deps**. App target links `InputMethodKit` + `AppKit`.
-- Bundle id **`com.rsautomation.inputmethod.bomi`** (MUST contain `inputmethod`).
-- `InputMethodConnectionName` = **`com.rsautomation.inputmethod.bomi_Connection`** (exact; mismatch = silent load failure).
+- Bundle id **`com.bomi.inputmethod.bomi`** (MUST contain `inputmethod`).
+- `InputMethodConnectionName` = **`com.bomi.inputmethod.bomi_Connection`** (exact; mismatch = silent load failure).
 - Controller class: `@objc(BomiInputController)`. App class: `@objc(BomiApplication)`. Info.plist references them by these ObjC names (no module prefix).
 - App target uses `swiftSettings: [.defaultIsolation(MainActor.self)]` so IMK overrides are MainActor-isolated (chosen concurrency approach). Engine target stays non-isolated/pure.
 - Commit policy: **per-syllable immediate commit**.
@@ -151,23 +151,23 @@ final class BomiInputController: IMKInputController {
   <key>CFBundleName</key><string>Bomi</string>
   <key>CFBundleDisplayName</key><string>Bomi</string>
   <key>CFBundleExecutable</key><string>Bomi</string>
-  <key>CFBundleIdentifier</key><string>com.rsautomation.inputmethod.bomi</string>
+  <key>CFBundleIdentifier</key><string>com.bomi.inputmethod.bomi</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>CFBundleShortVersionString</key><string>0.1</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSBackgroundOnly</key><true/>
   <key>NSPrincipalClass</key><string>BomiApplication</string>
-  <key>InputMethodConnectionName</key><string>com.rsautomation.inputmethod.bomi_Connection</string>
+  <key>InputMethodConnectionName</key><string>com.bomi.inputmethod.bomi_Connection</string>
   <key>InputMethodServerControllerClass</key><string>BomiInputController</string>
   <key>tsInputMethodIconFileKey</key><string>bomi.tiff</string>
   <key>ComponentInputModeDict</key>
   <dict>
     <key>tsInputModeListKey</key>
     <dict>
-      <key>com.rsautomation.inputmethod.bomi.korean</key>
+      <key>com.bomi.inputmethod.bomi.korean</key>
       <dict>
-        <key>TISInputSourceID</key><string>com.rsautomation.inputmethod.bomi.korean</string>
+        <key>TISInputSourceID</key><string>com.bomi.inputmethod.bomi.korean</string>
         <key>TISIntendedLanguage</key><string>ko</string>
         <key>tsInputModeScriptKey</key><string>smKorean</string>
         <key>tsInputModeMenuIconFileKey</key><string>bomi.tiff</string>
@@ -177,7 +177,7 @@ final class BomiInputController: IMKInputController {
     </dict>
     <key>tsVisibleInputModeOrderedArrayKey</key>
     <array>
-      <string>com.rsautomation.inputmethod.bomi.korean</string>
+      <string>com.bomi.inputmethod.bomi.korean</string>
     </array>
   </dict>
 </dict>

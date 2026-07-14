@@ -3,7 +3,7 @@
 - **Date:** 2026-07-14
 - **Status:** Approved design, pre-implementation
 - **Target:** macOS 26 (26.5.2), Xcode 26, Swift 6.3, Apple Silicon
-- **Bundle id:** `com.rsautomation.inputmethod.bomi`
+- **Bundle id:** `com.bomi.inputmethod.bomi`
 
 ## 1. Goal & Scope
 
@@ -168,7 +168,7 @@ keyDown → KeyTranslator(keyCode + shift → US-QWERTY char → 3f lookup)
 - `Package.swift`: `Engine` library target (pure), `IMKLayer` + `App` executable target linking IMK.
 - `Scripts/assemble-app.sh`: `swift build -c release` → assemble `Bomi.app` (`Contents/MacOS/Bomi`, `Contents/Info.plist`, `Contents/Resources/…`) → `codesign` (ad-hoc `-`).
 - `Scripts/install.sh`: copy `Bomi.app` → `~/Library/Input Methods/`, `killall Bomi` to reload. First-time: add in System Settings > Keyboard > Input Sources (log out/in if needed).
-- Bundle id `com.rsautomation.inputmethod.bomi`.
+- Bundle id `com.bomi.inputmethod.bomi`.
 
 ## 9. Testing Strategy
 - **EngineTests (XCTest, no IMK):** input-sequence → expected-string across all cho/jung/jong, every combination-table entry, dedicated-key vs combination compound jong equivalence, backspace recovery, commit boundaries, fallback for incomplete syllables. Sample: `kf`→`가`, `kfs`→`간` (s=ㄴ jong), `krw`→`갤` (r=ㅐ, w=ㄹ jong), `kkf`→`까` (ㄱ+ㄱ combine to ㄲ, +ㅏ). Verify each against libhangul.
