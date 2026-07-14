@@ -7,9 +7,10 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/Bomi "$APP/Contents/MacOS/Bomi"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
-cp Resources/bomi.tiff "$APP/Contents/Resources/bomi.tiff"
-# Localized input-source display names (Bomi / 보미) — without these the
-# input-source list shows the raw mode identifier.
+# Mode icons (menu bar ㅂ / B) + the input-method icon.
+cp Resources/*.png "$APP/Contents/Resources/"
+# Localized input-source display names — without these the input-source list
+# shows the raw mode identifier.
 for lproj in Resources/*.lproj; do
   cp -R "$lproj" "$APP/Contents/Resources/"
 done

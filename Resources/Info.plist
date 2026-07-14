@@ -15,7 +15,7 @@
   <key>NSPrincipalClass</key><string>BomiApplication</string>
   <key>InputMethodConnectionName</key><string>com.bomi.inputmethod.bomi_Connection</string>
   <key>InputMethodServerControllerClass</key><string>BomiInputController</string>
-  <key>tsInputMethodIconFileKey</key><string>bomi.tiff</string>
+  <key>tsInputMethodIconFileKey</key><string>bomi-input.png</string>
   <key>ComponentInputModeDict</key>
   <dict>
     <key>tsInputModeListKey</key>
@@ -25,7 +25,20 @@
         <key>TISInputSourceID</key><string>com.bomi.inputmethod.bomi.korean</string>
         <key>TISIntendedLanguage</key><string>ko</string>
         <key>tsInputModeScriptKey</key><string>smKorean</string>
-        <key>tsInputModeMenuIconFileKey</key><string>bomi.tiff</string>
+        <key>tsInputModeMenuIconFileKey</key><string>statusbomi_han.png</string>
+        <key>tsInputModeAlternateMenuIconFileKey</key><string>statusbomi_han.png</string>
+        <key>tsInputModePaletteIconFileKey</key><string>statusbomi_han.png</string>
+        <key>tsInputModeDefaultStateKey</key><true/>
+        <key>tsInputModeIsVisibleKey</key><true/>
+      </dict>
+      <key>com.bomi.inputmethod.bomi.roman</key>
+      <dict>
+        <key>TISInputSourceID</key><string>com.bomi.inputmethod.bomi.roman</string>
+        <key>TISIntendedLanguage</key><string>en</string>
+        <key>tsInputModeScriptKey</key><string>smRoman</string>
+        <key>tsInputModeMenuIconFileKey</key><string>statusbomi_eng.png</string>
+        <key>tsInputModeAlternateMenuIconFileKey</key><string>statusbomi_eng.png</string>
+        <key>tsInputModePaletteIconFileKey</key><string>statusbomi_eng.png</string>
         <key>tsInputModeDefaultStateKey</key><true/>
         <key>tsInputModeIsVisibleKey</key><true/>
       </dict>
@@ -33,6 +46,7 @@
     <key>tsVisibleInputModeOrderedArrayKey</key>
     <array>
       <string>com.bomi.inputmethod.bomi.korean</string>
+      <string>com.bomi.inputmethod.bomi.roman</string>
     </array>
   </dict>
 </dict>
