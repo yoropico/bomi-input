@@ -53,24 +53,32 @@ final class BomiInputController: IMKInputController {
         if !tail.isEmpty { client.insertText(tail, replacementRange: noRange) }
     }
 
-    private func handleToggleFlags(keyCode: UInt16, modifierFlags: NSEvent.ModifierFlags, client: IMKTextInput) {
-        let isToggleKey = keyCode == Preferences.shared.toggleKeyCode
-        let toggleKeyDown = modifierFlags.contains(.command)
-        let otherModifiers = !modifierFlags.intersection([.shift, .control, .option]).isEmpty
-        guard gate.flagsChanged(isToggleKey: isToggleKey, toggleKeyDown: toggleKeyDown,
-                                otherModifiersPresent: otherModifiers) else { return }
-
-        // Commit what's in flight, then hand the switch to macOS. `mode` is not set
-        // here — IMK reports the new mode back through setValue(_:forTag:client:).
-        flush(client)
-        ModeSwitcher.select(mode.other) { id in client.selectMode(id) }
+    /// Han/Eng toggle. Fires on the PRESS of Right-Command — not the release,
+    /// because switching the input source makes the key-up land elsewhere.
+    /// Returns whether the event was consumed.
+    private func handleToggleFlags(keyCode: UInt16, modifierFlags: NSEvent.ModifierFlags,
+                                   client: IMKTextInput) -> Bool {
+        let outcome = gate.flagsChanged(keyCode: keyCode,
+                                        flagsRaw: modifierFlags.rawValue,
+                                        toggleKeyCode: Preferences.shared.toggleKeyCode,
+                                        now: ProcessInfo.processInfo.systemUptime)
+        switch outcome {
+        case .notPress:
+            return false
+        case .suppressed:
+            // A duplicate press (the source switch / a Chromium app emits two).
+            // Consume it — toggling again would flip straight back.
+            return true
+        case .fire:
+            // Commit what's in flight, then let macOS do the switch. `mode` is not
+            // set here — IMK reports the new mode via setValue(_:forTag:client:).
+            flush(client)
+            ModeSwitcher.select(mode.other) { id in client.selectMode(id) }
+            return true
+        }
     }
 
     private func handleKeyEvent(keyCode: UInt16, flags: NSEvent.ModifierFlags, client: IMKTextInput) -> Bool {
-        // Any non-modifier keyDown means Right-Command (if held) is part of a chord,
-        // not a bare tap — disarm so releasing it does NOT fire the Han/Eng toggle.
-        gate.chordInterrupt()
-
         // Modifiers other than Shift: commit and pass through (e.g. Cmd+C).
         if flags.contains(.command) || flags.contains(.control) || flags.contains(.option) {
             flush(client)
@@ -109,15 +117,13 @@ final class BomiInputController: IMKInputController {
         guard let event else { return false }
         let boxed = UncheckedSendableBox(value: sender)
 
-        // Han/Eng toggle: bare Right-Command tap (down with no chord).
         if event.type == .flagsChanged {
             let keyCode = event.keyCode
             let modifierFlags = event.modifierFlags
-            MainActor.assumeIsolated {
-                guard let client = boxed.value as? IMKTextInput else { return }
-                self.handleToggleFlags(keyCode: keyCode, modifierFlags: modifierFlags, client: client)
+            return MainActor.assumeIsolated {
+                guard let client = boxed.value as? IMKTextInput else { return false }
+                return self.handleToggleFlags(keyCode: keyCode, modifierFlags: modifierFlags, client: client)
             }
-            return false
         }
 
         guard event.type == .keyDown else { return false }
@@ -139,6 +145,8 @@ final class BomiInputController: IMKInputController {
                 let newMode = InputMode.from(id: boxedValue.value as? String)
                 if newMode != self.mode {
                     self.mode = newMode
+                    // A mode change means the key-up of the toggle key went elsewhere.
+                    self.gate.reset()
                     // Never carry a half-composed syllable across a language change.
                     if let client = self.client(boxed.value) {
                         self.flush(client)
@@ -157,8 +165,10 @@ final class BomiInputController: IMKInputController {
 
     nonisolated override func activateServer(_ sender: Any!) {
         MainActor.assumeIsolated {
+            // Clear accumulated modifier state: a key-up delivered to another
+            // controller must not wedge the next press.
+            self.gate.reset()
             // macOS decides which mode activates; it reports it via setValue.
-            // Just make sure no stale composition survives the activation.
             _ = self.composer.flush()
         }
     }
@@ -173,6 +183,7 @@ final class BomiInputController: IMKInputController {
     nonisolated override func deactivateServer(_ sender: Any!) {
         let boxed = UncheckedSendableBox(value: sender)
         MainActor.assumeIsolated {
+            self.gate.reset()
             if let client = self.client(boxed.value) { self.flush(client) } else { _ = self.composer.flush() }
         }
     }

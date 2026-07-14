@@ -1,43 +1,60 @@
 import Testing
 @testable import BomiCore
 
-// Right-Command Han/Eng toggle: fires only on a *bare* down→up tap, never as
-// part of a chord. Pure state machine so the rule is testable without IMK.
+// Right-Command Han/Eng toggle, modeled on Gureum's on-device-verified rules:
+//   - fire on PRESS (0→1 transition), never on release: switching the input
+//     source makes the following key-up get delivered elsewhere, so a
+//     release-based toggle wedges.
+//   - debounce duplicate presses (the source switch — and Chromium apps — emit
+//     two press events a few ms apart; toggling on both flips 한→영→한).
+//   - reset the flag tracker on BOTH fire and suppress, and on focus changes,
+//     or a missed key-up leaves the command bit stuck and every later press is
+//     cancelled out as "no transition".
 
-@Test func bareTapTogglesOnRelease() {
+private let rightCmd: UInt16 = 0x36
+private let cmdFlag: UInt = 0x10_0000   // device-independent .command
+private let shiftFlag: UInt = 0x2_0000
+
+@Test func firesOnPressNotRelease() {
     var g = ToggleGate()
-    #expect(g.flagsChanged(isToggleKey: true, toggleKeyDown: true, otherModifiersPresent: false) == false)
-    #expect(g.armed == true)
-    #expect(g.flagsChanged(isToggleKey: true, toggleKeyDown: false, otherModifiersPresent: false) == true)
-    #expect(g.armed == false)
+    // press: command bit goes 0 -> 1
+    #expect(g.flagsChanged(keyCode: rightCmd, flagsRaw: cmdFlag, toggleKeyCode: rightCmd, now: 0) == .fire)
+    // release: command bit goes 1 -> 0 — must NOT fire again
+    #expect(g.flagsChanged(keyCode: rightCmd, flagsRaw: 0, toggleKeyCode: rightCmd, now: 0.5) == .notPress)
 }
 
-@Test func chordWithLetterDoesNotToggle() {
+@Test func duplicatePressWithinWindowIsSuppressed() {
     var g = ToggleGate()
-    _ = g.flagsChanged(isToggleKey: true, toggleKeyDown: true, otherModifiersPresent: false) // armed
-    g.chordInterrupt()  // a non-modifier keyDown (e.g. the 'C' of Cmd+C)
-    #expect(g.armed == false)
-    #expect(g.flagsChanged(isToggleKey: true, toggleKeyDown: false, otherModifiersPresent: false) == false)
+    #expect(g.flagsChanged(keyCode: rightCmd, flagsRaw: cmdFlag, toggleKeyCode: rightCmd, now: 0) == .fire)
+    // the source switch (or a Chromium app) emits a second press 5ms later
+    #expect(g.flagsChanged(keyCode: rightCmd, flagsRaw: cmdFlag, toggleKeyCode: rightCmd, now: 0.005) == .suppressed)
 }
 
-@Test func preHeldModifierDoesNotArm() {   // #4
+@Test func deliberateSecondTapOutsideWindowFires() {
     var g = ToggleGate()
-    // Shift already held when Right-Command goes down -> chord, must not arm.
-    #expect(g.flagsChanged(isToggleKey: true, toggleKeyDown: true, otherModifiersPresent: true) == false)
-    #expect(g.armed == false)
-    #expect(g.flagsChanged(isToggleKey: true, toggleKeyDown: false, otherModifiersPresent: true) == false)
+    #expect(g.flagsChanged(keyCode: rightCmd, flagsRaw: cmdFlag, toggleKeyCode: rightCmd, now: 0) == .fire)
+    // a human re-tap is far slower than the 80ms window
+    #expect(g.flagsChanged(keyCode: rightCmd, flagsRaw: cmdFlag, toggleKeyCode: rightCmd, now: 0.30) == .fire)
 }
 
-@Test func otherModifierChangeDisarms() {
+@Test func missedKeyUpDoesNotWedgeTheNextPress() {
     var g = ToggleGate()
-    _ = g.flagsChanged(isToggleKey: true, toggleKeyDown: true, otherModifiersPresent: false) // armed
-    // A different modifier's flagsChanged arrives before the toggle key is released.
-    #expect(g.flagsChanged(isToggleKey: false, toggleKeyDown: false, otherModifiersPresent: false) == false)
-    #expect(g.armed == false)
-    #expect(g.flagsChanged(isToggleKey: true, toggleKeyDown: false, otherModifiersPresent: false) == false)
+    #expect(g.flagsChanged(keyCode: rightCmd, flagsRaw: cmdFlag, toggleKeyCode: rightCmd, now: 0) == .fire)
+    // The key-up never arrives (the input-source switch ate it). The next physical
+    // press must still be seen as a 0->1 transition — this is the wedge bug.
+    #expect(g.flagsChanged(keyCode: rightCmd, flagsRaw: cmdFlag, toggleKeyCode: rightCmd, now: 1.0) == .fire)
 }
 
-@Test func loneReleaseDoesNotToggle() {
+@Test func otherModifierKeysAreNotPresses() {
     var g = ToggleGate()
-    #expect(g.flagsChanged(isToggleKey: true, toggleKeyDown: false, otherModifiersPresent: false) == false)
+    // Left shift changing state must never toggle.
+    #expect(g.flagsChanged(keyCode: 0x38, flagsRaw: shiftFlag, toggleKeyCode: rightCmd, now: 0) == .notPress)
+}
+
+@Test func resetClearsAccumulatedFlags() {
+    var g = ToggleGate()
+    _ = g.flagsChanged(keyCode: rightCmd, flagsRaw: cmdFlag, toggleKeyCode: rightCmd, now: 0)
+    g.reset()   // called on activate/deactivate
+    // After a reset the very next press is still a clean 0->1 transition.
+    #expect(g.flagsChanged(keyCode: rightCmd, flagsRaw: cmdFlag, toggleKeyCode: rightCmd, now: 1.0) == .fire)
 }
