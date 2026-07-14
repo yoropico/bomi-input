@@ -145,4 +145,16 @@ final class BomiInputController: IMKInputController {
             if let client = self.client(boxed.value) { self.flush(client) }
         }
     }
+
+    nonisolated override func menu() -> NSMenu! {
+        let boxed: UncheckedSendableBox<NSMenu> = MainActor.assumeIsolated {
+            UncheckedSendableBox(value: MenuBuilder.build(korean: self.korean, target: self))
+        }
+        return boxed.value
+    }
+
+    @objc func togglePerAppMemory(_ sender: NSMenuItem) {
+        let d = UserDefaults.standard
+        d.set(!Preferences.shared.perAppMemory, forKey: "perAppMemory")
+    }
 }
