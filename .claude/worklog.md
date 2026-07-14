@@ -13,3 +13,4 @@ Append one line per decision (the WHY). Newest at bottom.
 - **Automaton data** taken verbatim from libhangul `3f` keymap + `combination-default` (see spec Appendix A/B) — ingest, don't invent.
 - **Research note**: parallel research workflow partially failed (sebeolsik finder hit StructuredOutput retry cap; two finders returned dummy). Recovered by fetching libhangul source directly for the authoritative mapping.
 - **Spec approved**: `docs/superpowers/specs/2026-07-14-bomi-sebeolsik-ime-design.md`. Build order puts a minimal "does IMK load on macOS 26" spike first (highest risk), before the automaton.
+- **Implementation plan written**: `docs/superpowers/plans/2026-07-14-bomi-sebeolsik-ime.md` — 11 tasks, TDD, full Swift code inline. Automaton is a verbatim port of libhangul `hangul_ic_process_jaso` (fetched from source, not invented). Concurrency approach fixed: `.defaultIsolation(MainActor.self)` on the app target; Engine target stays pure/non-isolated.
