@@ -13,6 +13,10 @@ private nonisolated struct UncheckedSendableBox<Value>: @unchecked Sendable {
 @objc(BomiInputController)
 final class BomiInputController: IMKInputController {
     private var composer = HangulComposer()
+    private let language = LanguageMode()
+    private var korean = false
+    private var appID: String?
+    private var toggleArmed = false
 
     nonisolated override init() {
         super.init()
@@ -42,9 +46,28 @@ final class BomiInputController: IMKInputController {
         if !tail.isEmpty { client.insertText(tail, replacementRange: noRange) }
     }
 
+    private func handleToggleFlags(keyCode: UInt16, modifierFlags: NSEvent.ModifierFlags, client: IMKTextInput) {
+        guard keyCode == Preferences.shared.toggleKeyCode else { toggleArmed = false; return }
+        // .command bit present on the right-cmd change means key-down; absent means key-up.
+        let down = modifierFlags.contains(.command)
+        if down {
+            toggleArmed = true
+        } else if toggleArmed {
+            toggleArmed = false
+            flush(client)
+            language.toggle(forApp: appID)
+            korean = language.isKorean(forApp: appID)
+        }
+    }
+
     private func handleKeyEvent(keyCode: UInt16, flags: NSEvent.ModifierFlags, client: IMKTextInput) -> Bool {
         // Modifiers other than Shift: commit and pass through (e.g. Cmd+C).
         if flags.contains(.command) || flags.contains(.control) || flags.contains(.option) {
+            flush(client)
+            return false
+        }
+
+        if !korean {
             flush(client)
             return false
         }
@@ -74,13 +97,38 @@ final class BomiInputController: IMKInputController {
     }
 
     nonisolated override func handle(_ event: NSEvent!, client sender: Any!) -> Bool {
-        guard let event, event.type == .keyDown else { return false }
+        guard let event else { return false }
+        let boxed = UncheckedSendableBox(value: sender)
+
+        // Han/Eng toggle: bare Right-Command tap (down with no chord).
+        if event.type == .flagsChanged {
+            let keyCode = event.keyCode
+            let modifierFlags = event.modifierFlags
+            MainActor.assumeIsolated {
+                guard let client = boxed.value as? IMKTextInput else { return }
+                self.handleToggleFlags(keyCode: keyCode, modifierFlags: modifierFlags, client: client)
+            }
+            return false
+        }
+
+        guard event.type == .keyDown else { return false }
         let keyCode = event.keyCode
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let boxed = UncheckedSendableBox(value: sender)
         return MainActor.assumeIsolated {
             guard let client = boxed.value as? IMKTextInput else { return false }
             return self.handleKeyEvent(keyCode: keyCode, flags: flags, client: client)
+        }
+    }
+
+    nonisolated override func recognizedEvents(_ sender: Any!) -> Int {
+        Int(NSEvent.EventTypeMask.keyDown.rawValue | NSEvent.EventTypeMask.flagsChanged.rawValue)
+    }
+
+    nonisolated override func activateServer(_ sender: Any!) {
+        let boxed = UncheckedSendableBox(value: sender)
+        MainActor.assumeIsolated {
+            self.appID = (boxed.value as? IMKTextInput)?.bundleIdentifier()
+            self.korean = self.language.isKorean(forApp: self.appID)
         }
     }
 
