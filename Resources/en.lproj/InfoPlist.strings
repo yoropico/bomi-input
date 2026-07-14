@@ -1,0 +1,4 @@
+/* Input-source display name shown in System Settings > Keyboard > Input Sources.
+   The key is the input mode identifier from Info.plist's tsInputModeListKey;
+   without this mapping macOS shows the raw identifier. */
+"com.bomi.inputmethod.korean" = "Bomi";

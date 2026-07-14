@@ -1,0 +1,4 @@
+/* 입력 소스 표시 이름 (시스템 설정 > 키보드 > 입력 소스).
+   key는 Info.plist tsInputModeListKey의 입력 모드 식별자이며, 이 매핑이 없으면
+   macOS가 식별자 원문을 그대로 표시한다. */
+"com.bomi.inputmethod.korean" = "보미";

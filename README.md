@@ -108,8 +108,8 @@ it can be triaged as a real defect rather than silently worked around.
   preedit/commit/backspace, han/eng toggle, per-app state), `LanguageMode`
   + `Preferences` (toggle key, per-app memory), `MenuBuilder` (input-source
   menu), `main.swift` (`IMKServer` bootstrap).
-- `Resources/` — `Info.plist` (bundle id `com.rsautomation.inputmethod.bomi`,
-  connection name `com.rsautomation.inputmethod.bomi_Connection`) and the
+- `Resources/` — `Info.plist` (bundle id `com.bomi.inputmethod`,
+  connection name `com.bomi.inputmethod_Connection`) and the
   menu-bar icon.
 - `Scripts/` — `assemble-app.sh` (build + bundle + codesign),
   `install.sh` (copy to `~/Library/Input Methods`).
