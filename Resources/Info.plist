@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>Bomi</string>
+  <key>CFBundleDisplayName</key><string>Bomi</string>
+  <key>CFBundleExecutable</key><string>Bomi</string>
+  <key>CFBundleIdentifier</key><string>com.rsautomation.inputmethod.bomi</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>0.1</string>
+  <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>LSBackgroundOnly</key><true/>
+  <key>NSPrincipalClass</key><string>BomiApplication</string>
+  <key>InputMethodConnectionName</key><string>com.rsautomation.inputmethod.bomi_Connection</string>
+  <key>InputMethodServerControllerClass</key><string>BomiInputController</string>
+  <key>tsInputMethodIconFileKey</key><string>bomi.tiff</string>
+  <key>ComponentInputModeDict</key>
+  <dict>
+    <key>tsInputModeListKey</key>
+    <dict>
+      <key>com.rsautomation.inputmethod.bomi.korean</key>
+      <dict>
+        <key>TISInputSourceID</key><string>com.rsautomation.inputmethod.bomi.korean</string>
+        <key>TISIntendedLanguage</key><string>ko</string>
+        <key>tsInputModeScriptKey</key><string>smKorean</string>
+        <key>tsInputModeMenuIconFileKey</key><string>bomi.tiff</string>
+        <key>tsInputModeDefaultStateKey</key><true/>
+        <key>tsInputModeIsVisibleKey</key><true/>
+      </dict>
+    </dict>
+    <key>tsVisibleInputModeOrderedArrayKey</key>
+    <array>
+      <string>com.rsautomation.inputmethod.bomi.korean</string>
+    </array>
+  </dict>
+</dict>
+</plist>
