@@ -34,6 +34,16 @@
 - Files: Sources/Bomi/{BomiInputController,ModeSwitcher,DebugLog}.swift,
   docs/superpowers/specs/2026-07-14-bomi-han-eng-mode-switching-design.md
 
-- Next: nothing planned. Re-enable logging only if a problem reappears:
-  `touch /tmp/bomi-debug.on && killall Bomi`.
-- Open: none.
+- PENDING (asked for 2026-07-22, answer due after a few days of ordinary use):
+  **per-app coverage.** The 0-wedge result above is a TOTAL; the apps it covers were
+  never broken out and the log was then deleted, so it is not yet evidence about
+  Terminal / Royal TSX / browsers / Electron individually. Logging is back on and
+  collected continuously.
+  - Report: `~/Library/Application Support/Bomi/reports/latest.txt` (regenerated every
+    4h by the `com.bomi.logsnapshot` LaunchAgent; durable log survives reboots).
+  - Ad hoc: `python3 Scripts/analyze-debug-log.py "$HOME/Library/Application Support/Bomi/bomi-debug.log"`
+  - What would change the conclusion: any non-zero WEDGES column, or an app with heavy
+    `keys` and zero `toggles` (untested there, not proven good there).
+  - When done: `launchctl unload ~/Library/LaunchAgents/com.bomi.logsnapshot.plist`,
+    `rm /tmp/bomi-debug.on`, and delete `~/Library/Application Support/Bomi/`.
+- Open: none blocking.
