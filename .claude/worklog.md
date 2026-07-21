@@ -114,3 +114,78 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
 - **Fix:** `Preferences.toggleKeyCode(forApp:)` maps key-rewriting apps to the code that actually arrives (`com.lemonmojo.RoyalTSX.App` → 0x3D). Applies **only** while the user is on the default Right-Command; a deliberately chosen toggle key is respected (tested).
 - **My own misstep, recorded so it isn't repeated:** I first concluded "the user has always used Right-Option" from Gureum's default, and changed our default to match. Wrong — the user pressed Right-**Command** all along. Reading a config default is not evidence about what a person's fingers do. Ask, or measure the key that actually arrives per app.
 - Verified: RoyalTSX 61 → fire → switch ok; Terminal 54 → fire → switch ok; 0 failures, 0 fallbacks. Gate 32/32.
+
+## 2026-07-15 — toggle-fail-terminal: Han/Eng toggle wedges (investigation)
+
+- **Symptom (user):** in Terminal, Right-Cmd sometimes does nothing at all — stuck in
+  one language until the app is refocused. Also "the first letter is eaten when I switch
+  han→eng while typing fast". Same bug, two faces.
+- **Instrumentation is back, permanently.** `DebugLog` (Sources/Bomi/DebugLog.swift) writes
+  to /tmp/bomi-debug.log, gated on `/tmp/bomi-debug.on` existing (read once at startup).
+  os_log still shows NOTHING for this process; a file is the only way to see anything.
+  Kept in-tree instead of re-adding it each time this breaks.
+- **What the log proves:** in the wedged state, `keyDown` keeps arriving but `flagsChanged`
+  does NOT — zero events, indefinitely. So the toggle never even gets a chance to run:
+  this is NOT a ToggleGate/debounce bug. Refocusing the app (activateServer) restores it.
+- **Also observed at the wedging FIRE:** IMK's `setValue` and the key-up `flagsChanged`
+  both fail to arrive, whereas a healthy FIRE gets both within ~10-90ms. So the toggle's
+  own input-source switch is what breaks the event routing.
+- **Hypothesis killed (recorded so it isn't re-tried):** "toggling mid-composition (open
+  marked-text session) wedges it". Gureum does close the session first
+  (InputReceiver.swift:322 `cancelComposition()` → commit → `selectInputSourceFast`) and we
+  do not — a real difference, worth fixing on its own — but a wedge was then observed with
+  `preedit=''`, so an open marked session is NOT the cause.
+- **Real difference vs Gureum, still unexplained:** their `recognizedEvents` asks for a much
+  wider mask (`.keyDown, .flagsChanged, mouse up/down/dragged, .appKitDefined,
+  .applicationDefined, .systemDefined`); ours asks for `.keyDown | .flagsChanged` only.
+- **Next:** log now tags every line with the controller instance (IMK makes one per text
+  client) and records every `recognizedEvents` call. Suspicion: the events go to an instance
+  that never got the flagsChanged mask applied — which looks exactly like "no events at all".
+- **Instance tagging paid off.** Every log line now carries the controller instance
+  (IMK makes one per text client; a second Terminal window = a second instance).
+  With it: of 12 FIREs, 11 got their key-up back in 60-85ms; exactly ONE was followed by
+  that instance never seeing a flagsChanged again. So it is a race, not a deterministic
+  path — which is why it reads as "sometimes the toggle just dies".
+- **The contradiction that pointed at the cause:** after wedging, IMK still calls
+  `recognizedEvents` on that same instance before every keyDown, and we still answer
+  `.keyDown | .flagsChanged` — yet only keyDown is delivered. The mask is not the problem;
+  the app-side IMK client has stopped *sending* modifier events to us.
+- **Fix #1 (kept, but did NOT fix it):** move the input-source switch out of the
+  `flagsChanged` callback (`DispatchQueue.main.async`). Switching TIS while IMK is still
+  dispatching the event we are handling is wrong regardless, but the wedge recurred.
+- **Fix #2 (under test):** never return `true` from a flagsChanged. Consuming a modifier
+  event is what plausibly breaks the app-side modifier/session tracking, and a bare
+  Right-Command does nothing in the app anyway, so there is nothing to consume. Gureum
+  consumes it and — per the user — has the identical bug.
+- **If #2 fails:** stop patching and question the architecture. Switching the system input
+  source is the ONLY trigger for the wedge; the alternative is to keep one input source and
+  hold Han/Eng as internal state (cost: the menu-bar ㅂ/B icon stops reflecting the mode).
+- **Fix #2 REVERTED — it made things strictly worse.** Returning `false` from flagsChanged
+  cost *every* FIRE its key-up, where before only ~1 in 12 lost it. Consuming the modifier
+  event was never the problem. Both branches of the `switch` consume again, and the code
+  says so at the `.suppressed` case so it isn't "simplified" back.
+- **Fix #3 (the actual fix): switch via IMK's own `selectMode`, not `TISSelectInputSource`.**
+  TIS replaces the active input source *behind IMK's back*, and IMK's per-client event
+  routing is then left stale — the controller keeps getting `keyDown` but never another
+  `flagsChanged`. `selectMode` is the same switch, announced, so routing stays coherent.
+  Still deferred off the callback (`DispatchQueue.main.async`), and `mode` is set
+  optimistically to the target because `selectMode` is asynchronous and the next keystroke
+  can beat it.
+- **The claim that made us avoid `selectMode` for weeks was never measured.** "It's a ~1
+  second slow path" — `ModeSwitcher.pollUntilLanded` now times every switch. Real numbers
+  over 2814 toggles: **min 1ms, p50 34ms, p95 42ms, max 67ms.** Nothing close to a second.
+  Remembered performance folklore is not evidence; measure before designing around it.
+
+## 2026-07-22 — toggle-fail-terminal: verification from 6 days of real use
+
+- The build under test has been the installed IME since 2026-07-15 05:46 (source mtimes ==
+  build time, so binary == this working tree). `/tmp/bomi-debug.log` covers **145 hours**.
+- **2814 FIREs, 0 wedges.** Wedge test: after a FIRE, does that controller instance ever
+  see another `flagsChanged` while keyDowns keep arriving? Zero instances where it did not.
+- 0 `did NOT land`, 0 TIS fallbacks, 0 `DROPPED` (sender not IMKTextInput). 246 duplicate
+  presses correctly suppressed.
+- "First letter eaten on han→eng" is gone too: of 2744 first-keystroke-after-a-toggle cases,
+  0 were handled in the pre-toggle mode (the single apparent hit was an app-switch in
+  between, not a lost keystroke).
+- Gate 32/32 green. `DebugLog` stays in-tree, off unless `/tmp/bomi-debug.on` exists — it is
+  what proved every one of these numbers.
