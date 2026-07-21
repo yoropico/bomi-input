@@ -114,3 +114,12 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
 - **Fix:** `Preferences.toggleKeyCode(forApp:)` maps key-rewriting apps to the code that actually arrives (`com.lemonmojo.RoyalTSX.App` → 0x3D). Applies **only** while the user is on the default Right-Command; a deliberately chosen toggle key is respected (tested).
 - **My own misstep, recorded so it isn't repeated:** I first concluded "the user has always used Right-Option" from Gureum's default, and changed our default to match. Wrong — the user pressed Right-**Command** all along. Reading a config default is not evidence about what a person's fingers do. Ask, or measure the key that actually arrives per app.
 - Verified: RoyalTSX 61 → fire → switch ok; Terminal 54 → fire → switch ok; 0 failures, 0 fallbacks. Gate 32/32.
+2026-07-15 04:04 | [session end] reason=clear
+2026-07-15 04:04 | [compact auto] context compacted at 4339e59
+2026-07-15 04:04 | [session end] reason=other
+2026-07-15 14:33 | [session end] reason=prompt_input_exit
+2026-07-15 14:34 | [session end] reason=resume
+2026-07-15 14:35 | [session end] reason=other
+2026-07-16 13:54 | [session end] reason=other
+2026-07-16 13:54 | [session end] reason=other
+2026-07-16 13:58 | [session end] reason=other
