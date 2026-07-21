@@ -206,3 +206,24 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   on faith from another project and never measured, is the whole reason this bug survived
   weeks of patching. The spec is corrected in place, with the measurement and an explicit
   do-not-reinstate note, so the next reader cannot re-derive the wrong design from it.
+
+## 2026-07-22 — per-app coverage tooling (follow-up)
+
+- **Why:** the fix was verified on TOTALS only (2814 toggles, 0 wedges) and then the log
+  was deleted, so "which apps did those toggles actually cover?" became unanswerable. A
+  green total across one app is not evidence about the others. Logging is back on and
+  `Scripts/analyze-debug-log.py` now reports **per app**: toggles, wedges, suppressed
+  duplicates, keystrokes, switch-landing p50/p95/max, and failures.
+- **The tool is verified, not just written.** Its FIRE/wedge/landing logic was exercised
+  against a fixture containing a real captured session plus an injected wedge, a
+  `did NOT land`, a suppressed duplicate, and a typed-in-but-never-toggled app. All five
+  cases were reported correctly; the wedge is reported with the log's own HH:MM:SS so it
+  can be grepped for.
+- **Correction to an earlier note: "IMK makes one controller per text client" is not quite
+  right — instances are REUSED across apps.** Observed directly: instance `c401` served
+  `com.yoropico.bct`, then `com.apple.dt.Xcode` after a focus change. So an instance tag
+  does not identify an app, and `keyDown` lines carry no `app=` at all: the app must be
+  carried forward from the last `activateServer`/`flagsChanged` on that instance, and any
+  per-instance reasoning must break at activate/deactivate. The analyzer does both.
+- Not yet answered: the per-app numbers themselves. The log is hours old; it needs days of
+  ordinary use across Terminal/Royal TSX/browsers/Electron before it can say anything.
