@@ -17,5 +17,6 @@ xcuserdata/
 # SDD scratch
 .superpowers/
 
-# devmode hook logs (runtime noise)
+# devmode hook logs + session backups (runtime noise)
 .claude/logs/
+.claude/backups/
