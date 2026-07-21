@@ -44,13 +44,26 @@ Each mode sets `tsInputModeMenuIconFileKey`, `tsInputModeAlternateMenuIconFileKe
 Right-Command bare tap (detected by the existing pure `ToggleGate`) selects the
 *other* mode:
 
-1. `TISSelectInputSource` on the target mode's `TISInputSource` — the fast path
-   (same mechanism as Ctrl-Opt-Space); the menu-bar icon refreshes immediately.
-2. Fallback to `IMKTextInput.selectMode(id)` if the source is missing/disabled
-   or selection fails. (Gureum notes `selectMode` alone is a ~1s slow path.)
-3. Cache the `TISInputSource` ref per mode id; invalidate on selection failure.
+1. `IMKTextInput.selectMode(id)` — ask **IMK itself** to switch, deferred out of
+   the `flagsChanged` callback onto the next main-queue turn.
+2. Set the controller's `mode` optimistically to the target: `selectMode` is
+   asynchronous and the next keystroke can beat the switch, so it must already
+   be treated as the new language.
+3. Re-read the truth from TIS in `activateServer`; `setValue` reports it too.
 
 Flush any in-progress syllable **before** switching.
+
+**Revised 2026-07-22 — the original design (TIS fast path, `selectMode` only as a
+fallback) was wrong and is not to be reinstated.** `TISSelectInputSource`
+replaces the active input source behind IMK's back, and IMK's per-client event
+routing is then left stale: the controller keeps receiving `keyDown` but never
+another `flagsChanged`, so the next Right-Cmd is silently lost until the app is
+refocused. `selectMode` is the same switch, announced.
+
+The reason this design avoided `selectMode` — "Gureum notes it is a ~1s slow
+path" — was inherited, never measured. `ModeSwitcher.pollUntilLanded` now times
+every switch: over 2814 real toggles, **min 1ms, p50 34ms, p95 42ms, max 67ms**.
+The TIS path (`ModeSwitcher.select`) is retained but unused by the toggle.
 
 ### Language state ownership
 
@@ -102,8 +115,11 @@ the icon reads poorly in dark mode, revisit then (do not pre-solve).
 - `ToggleGate` (pure, existing tests stand): bare tap vs chord.
 - New pure unit: mode-id resolution — given active mode id, the toggle target is
   the other one; unknown id defaults to korean.
-- `TISSelectInputSource` itself is a system call — not unit-testable; covered by
-  manual verification.
+- The switch itself is a system call — not unit-testable; covered by
+  instrumented verification (`DebugLog` → `/tmp/bomi-debug.log`, silent unless
+  `/tmp/bomi-debug.on` exists). The wedge test that matters: after a toggle, does
+  that controller instance ever receive another `flagsChanged` while `keyDown`
+  keeps arriving? Measured over 145h of daily use: 2814 toggles, 0 wedges.
 - Manual (the point of the change): menu bar shows **ㅂ** in Korean and **B** in
   English, flips on Right-Command tap, both directions, and survives app switch.
 
@@ -115,6 +131,6 @@ the icon reads poorly in dark mode, revisit then (do not pre-solve).
 - **Both modes visible**: the user will see two entries (보미, 로마자) in the
   input-source list. That is how Gureum behaves and is intended — the Roman entry
   is what the toggle switches to.
-- `TISSelectInputSource` fails if the target mode is not enabled in System
-  Settings. Fallback to `selectMode` covers it; if both fail we stay put (no
-  silent breakage of composition).
+- `selectMode` fails silently if the target mode is not enabled in System
+  Settings — we stay put (no silent breakage of composition), and the poll logs
+  `did NOT land`. Observed 0 times in 2814 toggles.

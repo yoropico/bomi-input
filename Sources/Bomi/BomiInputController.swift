@@ -28,30 +28,44 @@ final class BomiInputController: IMKInputController {
 
     nonisolated override init() {
         super.init()
+        DebugLog.log("\(tag) init()")
     }
 
     nonisolated override init(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
         super.init(server: server, delegate: delegate, client: inputClient)
+        DebugLog.log("\(tag) init(server:delegate:client:)")
     }
 
     private func client(_ sender: Any!) -> IMKTextInput? { sender as? IMKTextInput }
     private let noRange = NSRange(location: NSNotFound, length: NSNotFound)
 
+    /// Short per-instance tag for the debug log. IMK creates one controller per
+    /// text client, so "the toggle stopped arriving" may really be "the events now
+    /// go to a *different* instance" — indistinguishable without this.
+    private nonisolated var tag: String {
+        "c\(UInt(bitPattern: ObjectIdentifier(self).hashValue) % 1000)"
+    }
+
     private func showPreedit(_ client: IMKTextInput) {
         let s = composer.preedit
+        DebugLog.log("    \(tag) -> setMarkedText '\(s)'")
         client.setMarkedText(s, selectionRange: NSRange(location: s.utf16.count, length: 0),
                              replacementRange: noRange)
     }
 
     private func commit(_ text: String, _ client: IMKTextInput) {
         guard !text.isEmpty else { return }
+        DebugLog.log("    \(tag) -> insertText '\(text)' (commit)")
         client.insertText(text, replacementRange: noRange)
     }
 
     /// Flush any in-progress syllable to the client. Used on blur/commit/mode change.
     private func flush(_ client: IMKTextInput) {
         let tail = composer.flush()
-        if !tail.isEmpty { client.insertText(tail, replacementRange: noRange) }
+        if !tail.isEmpty {
+            DebugLog.log("    \(tag) -> insertText '\(tail)' (flush)")
+            client.insertText(tail, replacementRange: noRange)
+        }
     }
 
     /// Han/Eng toggle. Fires on the PRESS of Right-Command — not the release,
@@ -59,26 +73,53 @@ final class BomiInputController: IMKInputController {
     /// Returns whether the event was consumed.
     private func handleToggleFlags(keyCode: UInt16, modifierFlags: NSEvent.ModifierFlags,
                                    client: IMKTextInput) -> Bool {
+        let bundleID = client.bundleIdentifier() ?? "(nil)"
         let toggleKey = Preferences.shared.toggleKeyCode(forApp: client.bundleIdentifier())
         let outcome = gate.flagsChanged(keyCode: keyCode,
                                         flagsRaw: modifierFlags.rawValue,
                                         toggleKeyCode: toggleKey,
                                         now: ProcessInfo.processInfo.systemUptime)
+        DebugLog.log("\(tag) flagsChanged app=\(bundleID) keyCode=\(keyCode) "
+                     + "flags=0x\(String(modifierFlags.rawValue, radix: 16)) "
+                     + "expectKey=\(toggleKey) outcome=\(outcome) mode=\(self.mode.rawValue) "
+                     + "preedit='\(composer.preedit)' tis=\(ModeSwitcher.currentID())")
+
         switch outcome {
         case .notPress:
             return false
         case .suppressed:
             // A duplicate press (the source switch / a Chromium app emits two).
             // Consume it — toggling again would flip straight back.
+            //
+            // (Returning false here instead was tried and made things strictly worse:
+            // every FIRE then lost its key-up, where before only ~1 in 12 did.)
             return true
         case .fire:
             flush(client)
             let target = mode.other
-            ModeSwitcher.select(target) { id in client.selectMode(id) }
-            // Read the truth back from TIS. Waiting for setValue would be a bug:
-            // IMK does not deliver it for roman→korean, so `mode` would stick and
-            // every later toggle would re-select the already-active source.
-            mode = ModeSwitcher.currentMode() ?? target
+            // Optimistic. `selectMode` is asynchronous, and the next keystroke can beat
+            // the switch; it must already be treated as the new language. The real state
+            // is re-read from TIS in `activateServer` and reported by `setValue`.
+            mode = target
+
+            // Ask IMK to switch, rather than swapping the input source behind its back.
+            //
+            // `TISSelectInputSource` (used here before) changes the active source without
+            // IMK's knowledge, and IMK's event routing is then left stale: this controller
+            // keeps getting `keyDown` but never another `flagsChanged`, so the next
+            // Right-Cmd is simply lost and only refocusing the app (activateServer) repairs
+            // it. Measured on-device: EVERY TIS toggle lost its key-up; what made it look
+            // intermittent was that switching apps kept silently repairing it.
+            //
+            // Still deferred out of this callback: mutating the input state while IMK is
+            // mid-dispatch of the event it just handed us is not something to rely on.
+            let boxedClient = UncheckedSendableBox(value: client)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    DebugLog.log("  \(self.tag) FIRE target=\(target.rawValue) via=imk-selectMode")
+                    ModeSwitcher.selectViaIMK(target) { id in boxedClient.value.selectMode(id) }
+                }
+            }
             return true
         }
     }
@@ -126,7 +167,10 @@ final class BomiInputController: IMKInputController {
             let keyCode = event.keyCode
             let modifierFlags = event.modifierFlags
             return MainActor.assumeIsolated {
-                guard let client = boxed.value as? IMKTextInput else { return false }
+                guard let client = boxed.value as? IMKTextInput else {
+                    DebugLog.log("\(self.tag) flagsChanged keyCode=\(keyCode) DROPPED: sender is not IMKTextInput")
+                    return false
+                }
                 return self.handleToggleFlags(keyCode: keyCode, modifierFlags: modifierFlags, client: client)
             }
         }
@@ -134,8 +178,11 @@ final class BomiInputController: IMKInputController {
         guard event.type == .keyDown else { return false }
         let keyCode = event.keyCode
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let chars = event.characters ?? ""
         return MainActor.assumeIsolated {
             guard let client = boxed.value as? IMKTextInput else { return false }
+            DebugLog.log("\(self.tag) keyDown keyCode=\(keyCode) chars='\(chars)' "
+                         + "flags=0x\(String(flags.rawValue, radix: 16)) mode=\(self.mode.rawValue)")
             return self.handleKeyEvent(keyCode: keyCode, flags: flags, client: client)
         }
     }
@@ -149,6 +196,8 @@ final class BomiInputController: IMKInputController {
         if tag == kTextServiceInputModePropertyTag {
             MainActor.assumeIsolated {
                 let newMode = InputMode.from(id: boxedValue.value as? String)
+                DebugLog.log("\(self.tag) setValue mode=\(boxedValue.value as? String ?? "(nil)") "
+                             + "parsed=\(newMode.rawValue) current=\(self.mode.rawValue)")
                 if newMode != self.mode {
                     self.mode = newMode
                     // A mode change means the toggle key's key-up went elsewhere.
@@ -165,11 +214,17 @@ final class BomiInputController: IMKInputController {
         super.setValue(value, forTag: tag, client: sender)
     }
 
+    /// IMK asks this **once per client** and caches the answer. If a controller
+    /// ever goes live without this being asked, it receives keyDown but NOT
+    /// flagsChanged — which is exactly the "Right-Cmd does nothing" wedge.
     nonisolated override func recognizedEvents(_ sender: Any!) -> Int {
-        Int(NSEvent.EventTypeMask.keyDown.rawValue | NSEvent.EventTypeMask.flagsChanged.rawValue)
+        let app = (sender as? IMKTextInput)?.bundleIdentifier() ?? "(nil)"
+        DebugLog.log("\(tag) recognizedEvents asked by app=\(app)")
+        return Int(NSEvent.EventTypeMask.keyDown.rawValue | NSEvent.EventTypeMask.flagsChanged.rawValue)
     }
 
     nonisolated override func activateServer(_ sender: Any!) {
+        let boxed = UncheckedSendableBox(value: sender)
         MainActor.assumeIsolated {
             // Clear accumulated modifier state: a key-up delivered to another
             // controller must not wedge the next press.
@@ -177,6 +232,8 @@ final class BomiInputController: IMKInputController {
             // Trust TIS, not setValue.
             if let active = ModeSwitcher.currentMode() { self.mode = active }
             _ = self.composer.flush()
+            let app = (self.client(boxed.value)?.bundleIdentifier()) ?? "(nil)"
+            DebugLog.log("\(self.tag) activateServer app=\(app) tis=\(ModeSwitcher.currentID()) mode=\(self.mode.rawValue)")
         }
     }
 
@@ -192,6 +249,7 @@ final class BomiInputController: IMKInputController {
         MainActor.assumeIsolated {
             self.gate.reset()
             if let client = self.client(boxed.value) { self.flush(client) } else { _ = self.composer.flush() }
+            DebugLog.log("\(self.tag) deactivateServer tis=\(ModeSwitcher.currentID()) mode=\(self.mode.rawValue)")
         }
     }
 
