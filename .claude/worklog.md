@@ -198,3 +198,11 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   between, not a lost keystroke).
 - Gate 32/32 green. `DebugLog` stays in-tree, off unless `/tmp/bomi-debug.on` exists — it is
   what proved every one of these numbers.
+- **Landed** as d8cd3bc (merge --no-ff into main), gate 32/32 after the merge. Desk and
+  branch removed; debug logging turned back off (`/tmp/bomi-debug.on` gone, IME restarted).
+- **The spec-gate earned its keep here.** It blocked the merge because `Sources/` changed
+  with no spec update — and the spec still said "`TISSelectInputSource` — the fast path"
+  and "(Gureum notes `selectMode` alone is a ~1s slow path)". That second sentence, taken
+  on faith from another project and never measured, is the whole reason this bug survived
+  weeks of patching. The spec is corrected in place, with the measurement and an explicit
+  do-not-reinstate note, so the next reader cannot re-derive the wrong design from it.
