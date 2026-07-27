@@ -50,7 +50,8 @@ swift test
 
 This runs a release build, assembles `Bomi.app` at the repo root
 (`Contents/MacOS/Bomi`, `Contents/Info.plist`,
-`Contents/Resources/bomi.tiff`), and ad-hoc code-signs it.
+`Contents/Resources/*.png` plus the localized `*.lproj` strings), and
+ad-hoc code-signs it.
 
 ## Install
 
@@ -109,8 +110,9 @@ it can be triaged as a real defect rather than silently worked around.
   + `Preferences` (toggle key, per-app memory), `MenuBuilder` (input-source
   menu), `main.swift` (`IMKServer` bootstrap).
 - `Resources/` — `Info.plist` (bundle id `com.bomi.inputmethod.bomi`,
-  connection name `com.bomi.inputmethod.bomi_Connection`) and the
-  menu-bar icon.
+  connection name `com.bomi.inputmethod.bomi_Connection`), the input-method
+  icon (`bomi-input.png`), the menu-bar mode icons (`statusbomi_eng/han.png`
+  + `@2x`), and localized input-source names (`en.lproj`/`ko.lproj`).
 - `Scripts/` — `assemble-app.sh` (build + bundle + codesign),
   `install.sh` (copy to `~/Library/Input Methods`).
 

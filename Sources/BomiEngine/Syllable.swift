@@ -10,13 +10,16 @@ public enum Syllable {
             let ci = Jamo.choIndex(cho)
             let ji = Jamo.jungIndex(jung)
             let ki = jong == 0 ? 0 : Jamo.jongIndex(jong)
-            let code = sBase + UInt32((ci * 21 + ji) * 28 + ki)
-            return String(UnicodeScalar(code)!)
+            let code = Int(sBase) + (ci * 21 + ji) * 28 + ki
+            if code >= 0, let scalar = UnicodeScalar(UInt32(code)) {
+                return String(scalar)
+            }
+            // Invalid jamo: fall through to the compatibility jamo below.
         }
         var s = ""
-        if cho != 0  { s.unicodeScalars.append(UnicodeScalar(SebeolsikFinal.compat(cho))!) }
-        if jung != 0 { s.unicodeScalars.append(UnicodeScalar(SebeolsikFinal.compat(jung))!) }
-        if jong != 0 { s.unicodeScalars.append(UnicodeScalar(SebeolsikFinal.compat(jong))!) }
+        if cho != 0,  let c = UnicodeScalar(SebeolsikFinal.compat(cho))  { s.unicodeScalars.append(c) }
+        if jung != 0, let c = UnicodeScalar(SebeolsikFinal.compat(jung)) { s.unicodeScalars.append(c) }
+        if jong != 0, let c = UnicodeScalar(SebeolsikFinal.compat(jong)) { s.unicodeScalars.append(c) }
         return s
     }
 }

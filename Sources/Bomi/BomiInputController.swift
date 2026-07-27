@@ -17,11 +17,6 @@ final class BomiInputController: IMKInputController {
     private var composer = HangulComposer()
     private var gate = ToggleGate()
 
-    /// The active input source is the Han/Eng state. Kept in sync by reading it
-    /// back from TIS (see `ModeSwitcher.currentMode()`) — NOT from IMK's
-    /// `setValue(_:forTag:client:)`, which does not reliably report mode changes.
-    private var mode: InputMode = .korean
-
     /// Keys that end/interrupt composition and are handled by the app itself:
     /// Enter(0x24), Return(0x4C), Tab(0x30), Escape(0x35), arrows(0x7B-0x7E), space(0x31).
     private static let passthroughKeys: Set<UInt16> = [0x24, 0x4C, 0x30, 0x35, 0x7B, 0x7C, 0x7D, 0x7E, 0x31]
@@ -36,7 +31,15 @@ final class BomiInputController: IMKInputController {
         DebugLog.log("\(tag) init(server:delegate:client:)")
     }
 
-    private func client(_ sender: Any!) -> IMKTextInput? { sender as? IMKTextInput }
+    /// IMK documents `sender` as always conforming to IMKTextInput, but the cast
+    /// can fail when the client arrives as an XPC proxy. The client is stored on
+    /// the controller at creation (one controller per session, per
+    /// IMKInputController.h), so fall back to it rather than dropping the text.
+    private func client(_ sender: Any!) -> IMKTextInput? {
+        if let client = sender as? IMKTextInput { return client }
+        guard let stored = super.client() else { return nil }
+        return stored
+    }
     private let noRange = NSRange(location: NSNotFound, length: NSNotFound)
 
     /// Short per-instance tag for the debug log. IMK creates one controller per
@@ -81,7 +84,7 @@ final class BomiInputController: IMKInputController {
                                         now: ProcessInfo.processInfo.systemUptime)
         DebugLog.log("\(tag) flagsChanged app=\(bundleID) keyCode=\(keyCode) "
                      + "flags=0x\(String(modifierFlags.rawValue, radix: 16)) "
-                     + "expectKey=\(toggleKey) outcome=\(outcome) mode=\(self.mode.rawValue) "
+                     + "expectKey=\(toggleKey) outcome=\(outcome) mode=\(ModeState.current.rawValue) "
                      + "preedit='\(composer.preedit)' tis=\(ModeSwitcher.currentID())")
 
         switch outcome {
@@ -96,11 +99,13 @@ final class BomiInputController: IMKInputController {
             return true
         case .fire:
             flush(client)
-            let target = mode.other
+            let target = ModeState.current.other
             // Optimistic. `selectMode` is asynchronous, and the next keystroke can beat
             // the switch; it must already be treated as the new language. The real state
             // is re-read from TIS in `activateServer` and reported by `setValue`.
-            mode = target
+            // The cache is process-wide, so a toggle fired in this client is already
+            // visible to every other app's controller.
+            ModeState.current = target
 
             // Ask IMK to switch, rather than swapping the input source behind its back.
             //
@@ -132,7 +137,7 @@ final class BomiInputController: IMKInputController {
         }
 
         // Roman mode: we stay active (so Right-Command still reaches us) but type nothing.
-        if mode != .korean {
+        if ModeState.current != .korean {
             flush(client)
             return false
         }
@@ -182,7 +187,7 @@ final class BomiInputController: IMKInputController {
         return MainActor.assumeIsolated {
             guard let client = boxed.value as? IMKTextInput else { return false }
             DebugLog.log("\(self.tag) keyDown keyCode=\(keyCode) chars='\(chars)' "
-                         + "flags=0x\(String(flags.rawValue, radix: 16)) mode=\(self.mode.rawValue)")
+                         + "flags=0x\(String(flags.rawValue, radix: 16)) mode=\(ModeState.current.rawValue)")
             return self.handleKeyEvent(keyCode: keyCode, flags: flags, client: client)
         }
     }
@@ -197,9 +202,9 @@ final class BomiInputController: IMKInputController {
             MainActor.assumeIsolated {
                 let newMode = InputMode.from(id: boxedValue.value as? String)
                 DebugLog.log("\(self.tag) setValue mode=\(boxedValue.value as? String ?? "(nil)") "
-                             + "parsed=\(newMode.rawValue) current=\(self.mode.rawValue)")
-                if newMode != self.mode {
-                    self.mode = newMode
+                             + "parsed=\(newMode.rawValue) current=\(ModeState.current.rawValue)")
+                if newMode != ModeState.current {
+                    ModeState.current = newMode
                     // A mode change means the toggle key's key-up went elsewhere.
                     self.gate.reset()
                     // Never carry a half-composed syllable across a language change.
@@ -230,17 +235,24 @@ final class BomiInputController: IMKInputController {
             // controller must not wedge the next press.
             self.gate.reset()
             // Trust TIS, not setValue.
-            if let active = ModeSwitcher.currentMode() { self.mode = active }
+            if let active = ModeSwitcher.currentMode() { ModeState.current = active }
             _ = self.composer.flush()
             let app = (self.client(boxed.value)?.bundleIdentifier()) ?? "(nil)"
-            DebugLog.log("\(self.tag) activateServer app=\(app) tis=\(ModeSwitcher.currentID()) mode=\(self.mode.rawValue)")
+            DebugLog.log("\(self.tag) activateServer app=\(app) tis=\(ModeSwitcher.currentID()) mode=\(ModeState.current.rawValue)")
         }
     }
 
     nonisolated override func commitComposition(_ sender: Any!) {
         let boxed = UncheckedSendableBox(value: sender)
         MainActor.assumeIsolated {
-            if let client = self.client(boxed.value) { self.flush(client) } else { _ = self.composer.flush() }
+            if let client = self.client(boxed.value) {
+                self.flush(client)
+            } else {
+                let tail = self.composer.flush()
+                if !tail.isEmpty {
+                    DebugLog.log("\(self.tag) commitComposition LOST '\(tail)': no IMKTextInput client")
+                }
+            }
         }
     }
 
@@ -248,14 +260,21 @@ final class BomiInputController: IMKInputController {
         let boxed = UncheckedSendableBox(value: sender)
         MainActor.assumeIsolated {
             self.gate.reset()
-            if let client = self.client(boxed.value) { self.flush(client) } else { _ = self.composer.flush() }
-            DebugLog.log("\(self.tag) deactivateServer tis=\(ModeSwitcher.currentID()) mode=\(self.mode.rawValue)")
+            if let client = self.client(boxed.value) {
+                self.flush(client)
+            } else {
+                let tail = self.composer.flush()
+                if !tail.isEmpty {
+                    DebugLog.log("\(self.tag) deactivateServer LOST '\(tail)': no IMKTextInput client")
+                }
+            }
+            DebugLog.log("\(self.tag) deactivateServer tis=\(ModeSwitcher.currentID()) mode=\(ModeState.current.rawValue)")
         }
     }
 
     nonisolated override func menu() -> NSMenu! {
         let boxed: UncheckedSendableBox<NSMenu> = MainActor.assumeIsolated {
-            UncheckedSendableBox(value: MenuBuilder.build(mode: self.mode))
+            UncheckedSendableBox(value: MenuBuilder.build(mode: ModeState.current))
         }
         return boxed.value
     }

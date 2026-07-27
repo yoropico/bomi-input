@@ -1,8 +1,6 @@
 import Foundation
 
 public enum KeyTranslator {
-    public static let rightCommandKeyCode: UInt16 = 0x36
-
     // US ANSI virtual keycode -> (unshifted, shifted) ASCII.
     private static let table: [UInt16: (UInt32, UInt32)] = [
         0x00:(0x61,0x41),0x0B:(0x62,0x42),0x08:(0x63,0x43),0x02:(0x64,0x44),0x0E:(0x65,0x45),

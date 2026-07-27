@@ -75,7 +75,9 @@ public struct HangulComposer {
         case nil:
             // Symbol/digit from the 3f map (e.g. '.', '·'): commit current, append the symbol.
             commit += drain()
-            commit.unicodeScalars.append(UnicodeScalar(value)!)
+            if let scalar = UnicodeScalar(value) {
+                commit.unicodeScalars.append(scalar)
+            }
         }
         return commit
     }

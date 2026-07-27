@@ -54,13 +54,14 @@ public struct ToggleGate {
 
     public init() {}
 
-    /// Device-independent modifier bit that the given (right-side) modifier key sets.
+    /// Device-independent modifier bit that the given (left- or right-side)
+    /// modifier key sets.
     private static func modifierFlag(forKeyCode keyCode: UInt16) -> UInt? {
         switch keyCode {
-        case 0x36: return 0x10_0000   // kVK_RightCommand -> .command
-        case 0x3C: return 0x2_0000    // kVK_RightShift   -> .shift
-        case 0x3D: return 0x8_0000    // kVK_RightOption  -> .option
-        case 0x3E: return 0x4_0000    // kVK_RightControl -> .control
+        case 0x36, 0x37: return 0x10_0000   // kVK_RightCommand / kVK_Command -> .command
+        case 0x3C, 0x38: return 0x2_0000    // kVK_RightShift / kVK_Shift     -> .shift
+        case 0x3D, 0x3A: return 0x8_0000    // kVK_RightOption / kVK_Option   -> .option
+        case 0x3E, 0x3B: return 0x4_0000    // kVK_RightControl / kVK_Control -> .control
         default: return nil
         }
     }

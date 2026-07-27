@@ -15,7 +15,9 @@ final class BomiApplication: NSApplication {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let name = Bundle.main.infoDictionary?["InputMethodConnectionName"] as! String
+        guard let name = Bundle.main.infoDictionary?["InputMethodConnectionName"] as? String else {
+            fatalError("Info.plist is missing a string value for 'InputMethodConnectionName'")
+        }
         server = IMKServer(name: name, bundleIdentifier: Bundle.main.bundleIdentifier)
     }
 }

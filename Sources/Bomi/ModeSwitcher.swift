@@ -85,6 +85,16 @@ enum ModeSwitcher {
         }
         guard attempt < 100 else {   // 100 * 20ms = 2s ceiling
             DebugLog.log("    ModeSwitcher: IMK selectMode did NOT land within \(elapsedMs)ms")
+            // The optimistic cache is now wrong, and nothing re-reads TIS until the
+            // next focus change — until then every controller types in the stale
+            // language. Heal it from TIS, which is the truth here: this path is
+            // reached only because the switch never landed, so there is no
+            // landed-then-retoggled race to lose. (The success path above must NOT
+            // resync: there a fast re-toggle can legitimately disagree with TIS.)
+            if let actual = currentMode() {
+                ModeState.current = actual
+                DebugLog.log("    ModeSwitcher: resynced ModeState.current=\(actual.rawValue) from TIS")
+            }
             return
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(20)) {
