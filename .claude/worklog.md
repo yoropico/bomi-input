@@ -227,3 +227,6 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   per-instance reasoning must break at activate/deactivate. The analyzer does both.
 - Not yet answered: the per-app numbers themselves. The log is hours old; it needs days of
   ordinary use across Terminal/Royal TSX/browsers/Electron before it can say anything.
+2026-07-22 07:17 | [session end] reason=other
+2026-07-22 07:18 | [session end] reason=other
+2026-07-22 07:20 | [session end] reason=other
