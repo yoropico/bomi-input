@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// File logging for the IME process.
 ///
@@ -10,11 +11,15 @@ import Foundation
 ///
 /// Silent unless the switch file exists, so a shipped build logs nothing:
 ///
-///     touch /tmp/bomi-debug.on && killall Bomi   # enable (IME relaunches on next keystroke)
-///     rm /tmp/bomi-debug.on && killall Bomi      # disable
+///     touch /tmp/bomi-debug.on   # enable (takes effect within ~5s)
+///     rm /tmp/bomi-debug.on      # disable (same)
 ///
-/// The switch is read **once** at startup: `handle(_:client:)` runs on every
-/// keystroke, and a `stat()` per event is not free.
+/// The switch is re-checked at most once every 5 seconds: `handle(_:client:)`
+/// runs on every keystroke and a `stat()` per event is not free, but a cached
+/// read behind an unfair lock is. It must NOT require restarting the IME:
+/// `killall Bomi` on a live, selected input method is how Bomi got dropped from
+/// `AppleEnabledInputSources` on 2026-07-28 (selected-but-dead window during
+/// the relaunch gap), so nothing may ever depend on killing this process.
 ///
 /// Everything here is `nonisolated`: the target's default isolation is
 /// `MainActor`, but the log is also written from `handle(_:client:)` before the
@@ -22,8 +27,25 @@ import Foundation
 nonisolated enum DebugLog {
     private static let switchPath = "/tmp/bomi-debug.on"
     private static let logPath = "/tmp/bomi-debug.log"
+    private static let recheckInterval: Duration = .seconds(5)
 
-    static let isEnabled = FileManager.default.fileExists(atPath: switchPath)
+    private static let flagCache = OSAllocatedUnfairLock<(enabled: Bool, checkedAt: ContinuousClock.Instant)>(
+        initialState: (
+            enabled: FileManager.default.fileExists(atPath: switchPath),
+            checkedAt: ContinuousClock.now
+        )
+    )
+
+    static var isEnabled: Bool {
+        flagCache.withLock { state in
+            let now = ContinuousClock.now
+            if now - state.checkedAt > recheckInterval {
+                state.enabled = FileManager.default.fileExists(atPath: switchPath)
+                state.checkedAt = now
+            }
+            return state.enabled
+        }
+    }
 
     /// Writes are serialized off the input thread — logging must never add
     /// latency to a keystroke.
