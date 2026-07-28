@@ -20,3 +20,5 @@ xcuserdata/
 # devmode hook logs + session backups (runtime noise)
 .claude/logs/
 .claude/backups/
+# devmode: session snapshots are runtime state, never tracked (snapshot-untrack)
+.claude/sessions/
