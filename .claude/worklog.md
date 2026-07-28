@@ -246,3 +246,4 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   script now touch-only + logs bomi-present/MISSING in AppleEnabledInputSources each run
   (4h-resolution watchdog for recurrence). Deploy of the DebugLog change needs one
   attended install.sh run (it kills the IME) -- deferred to yoros's go.
+2026-07-29 05:01 | [land] ime-enabled-drop -> main (merge) -- fix: never kill the live IME to re-arm debug logging
