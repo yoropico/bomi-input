@@ -249,3 +249,4 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
 2026-07-29 05:01 | [push] ime-enabled-drop @ 418cd5e -- fix: never kill the live IME to re-arm debug logging
 2026-07-29 05:01 | [PR] https://github.com/yoropico/bomi-input/pull/8
 2026-07-29 05:01 | [land] ime-enabled-drop -> main (merge) -- fix: never kill the live IME to re-arm debug logging
+2026-07-29 05:39 | [session end] reason=exit
