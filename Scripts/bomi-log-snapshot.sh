@@ -24,13 +24,28 @@ ANALYZER="$(cd "$(dirname "$0")" && pwd)/analyze-debug-log.py"
 
 mkdir -p "$REPORTS"
 
-# A reboot clears the switch too, so the IME would be running silently. Restore it
-# and restart the IME -- safe, since with the switch gone it was logging nothing
-# anyway, and it relaunches on the next keystroke.
-if [ ! -f "$SWITCH" ]; then
-    touch "$SWITCH"
-    killall Bomi 2>/dev/null
+# A reboot (or the periodic /tmp reaper) clears the switch; restore it. DebugLog
+# re-checks the file every ~5s, so touching it is enough.
+#
+# NEVER `killall Bomi` here. Killing a live, selected input method leaves macOS
+# with a selected-but-dead IME until the next keystroke relaunches it; that
+# window is how Bomi got dropped from AppleEnabledInputSources on 2026-07-28
+# (6 minutes dead at 06:10, enabled-list entry gone, IME then intermittently
+# reverting to the default source). Older builds (pre re-check) cache the switch
+# at startup and will simply stay silent until their next natural relaunch --
+# acceptable; a dead IME is not.
+[ -f "$SWITCH" ] || touch "$SWITCH"
+
+# Watchdog for the 2026-07-28 incident class: record whether Bomi is still in
+# the persisted enabled list, so the next drop is datable to a 4h window
+# instead of being reconstructed days later from nothing.
+if defaults read com.apple.HIToolbox AppleEnabledInputSources 2>/dev/null \
+        | grep -q 'com.bomi.inputmethod.bomi'; then
+    enabled_state="present"
+else
+    enabled_state="MISSING"
 fi
+echo "$(date '+%Y-%m-%d %H:%M') enabled-list: bomi $enabled_state" >> "$DIR/maintenance.log"
 
 # Append only what is new. A current size smaller than the recorded offset means
 # the log was cleared or recreated -- start from the beginning of the new one.

@@ -1,0 +1,11 @@
+## Session state (devmode)
+- Updated: 2026-07-28 19:56
+- Goal: <task: ime-enabled-drop>
+- Branch: 
+- Mental model: 
+- Why: 
+- Decisions: 
+- Gotchas: 
+- Files: 
+- Next: 
+- Open: 

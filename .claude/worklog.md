@@ -230,3 +230,19 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
 2026-07-22 07:17 | [session end] reason=other
 2026-07-22 07:18 | [session end] reason=other
 2026-07-22 07:20 | [session end] reason=other
+- [ime-enabled-drop] Root cause of the "IME reverts to macOS default" reports: our own
+  com.bomi.logsnapshot LaunchAgent ran `killall Bomi` when the /tmp debug switch vanished
+  (/tmp reaper, 2026-07-28 06:10:40). The selected IME stayed dead for 6m19s; macOS dropped
+  Bomi from AppleEnabledInputSources while keeping it selected, and every input-menu
+  rebuild since could flip the selection to ABC/Apple-390. Evidence: unified log (only Bomi
+  death in 36h, SIGTERM from launchd), zero foreign-mode setValue in 383k debug-log lines,
+  repo has no TIS enable/disable code at all.
+- [ime-enabled-drop] State repaired live: TISEnableInputSource reported all Bomi sources
+  already enabled (runtime/persistence split), churn didn't persist, so the two mode dicts
+  were written into AppleEnabledInputSources via `defaults write` (modeled on the Apple
+  Korean entry) and TextInputMenuAgent restarted; entries survived the restart.
+- [ime-enabled-drop] Fix decision: DebugLog switch is re-checked every 5s (OSAllocatedUnfairLock,
+  keystroke path stays ~lock-only) so the script never needs to restart the IME; snapshot
+  script now touch-only + logs bomi-present/MISSING in AppleEnabledInputSources each run
+  (4h-resolution watchdog for recurrence). Deploy of the DebugLog change needs one
+  attended install.sh run (it kills the IME) -- deferred to yoros's go.
