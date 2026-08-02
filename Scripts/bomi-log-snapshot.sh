@@ -36,16 +36,24 @@ mkdir -p "$REPORTS"
 # acceptable; a dead IME is not.
 [ -f "$SWITCH" ] || touch "$SWITCH"
 
-# Watchdog for the 2026-07-28 incident class: record whether Bomi is still in
-# the persisted enabled list, so the next drop is datable to a 4h window
-# instead of being reconstructed days later from nothing.
-if defaults read com.apple.HIToolbox AppleEnabledInputSources 2>/dev/null \
-        | grep -q 'com.bomi.inputmethod.bomi'; then
+# Watchdog for both input-source incident classes, so the next occurrence is
+# datable to a 4h window instead of being reconstructed days later from nothing:
+#
+#   2026-07-28 -- Bomi vanished from the persisted enabled list entirely.
+#   2026-08-03 -- duplicate "Sebeolsik Final" rows piled up in the input source
+#                 list. Persisted state turned out clean (the duplication never
+#                 exceeded one extra runtime entry), so the count below is what
+#                 will show whether a real recurrence reaches persistence.
+#
+# 2 is the only healthy value: the korean and roman modes, once each.
+enabled_list=$(defaults read com.apple.HIToolbox AppleEnabledInputSources 2>/dev/null)
+bomi_modes=$(printf '%s\n' "$enabled_list" | grep -c '"Input Mode" = "com.bomi.inputmethod.bomi\.')
+if [ "$bomi_modes" -gt 0 ]; then
     enabled_state="present"
 else
     enabled_state="MISSING"
 fi
-echo "$(date '+%Y-%m-%d %H:%M') enabled-list: bomi $enabled_state" >> "$DIR/maintenance.log"
+echo "$(date '+%Y-%m-%d %H:%M') enabled-list: bomi $enabled_state (modes=$bomi_modes, expected 2)" >> "$DIR/maintenance.log"
 
 # Append only what is new. A current size smaller than the recorded offset means
 # the log was cleared or recreated -- start from the beginning of the new one.

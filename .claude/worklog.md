@@ -250,3 +250,17 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
 2026-07-29 05:01 | [PR] https://github.com/yoropico/bomi-input/pull/8
 2026-07-29 05:01 | [land] ime-enabled-drop -> main (merge) -- fix: never kill the live IME to re-arm debug logging
 2026-07-29 05:39 | [session end] reason=exit
+- [sebeolsik-mvp] 2026-08-03 "input sources multiply" report investigated end to end.
+  Persisted AppleEnabledInputSources was clean the whole time (5 entries; bomi korean
+  and roman once each); only the runtime TIS list ever carried one extra korean entry,
+  and deleting a single duplicate row in System Settings cleared both that and the
+  on-screen list. Ruled out by experiment: app code (no TIS enable/register call
+  anywhere), reinstall via install.sh (count unchanged), and the repo-root Bomi.app
+  copy that LaunchServices had registered under the same bundle id (unregistered it;
+  no effect -- left unregistered since nothing should register a build artifact).
+  The 8+ identical rows on screen never matched any store, so the remaining suspect is
+  Settings' own list rendering rather than real registrations -- not proven, so it
+  goes to monitoring instead of a fix.
+- [sebeolsik-mvp] Snapshot watchdog now records the bomi mode count (modes=N, healthy
+  is 2) next to the present/MISSING flag, so a recurrence that actually reaches
+  persistence is datable to a 4h window instead of being argued from screenshots.
