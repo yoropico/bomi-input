@@ -264,3 +264,29 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
 - [sebeolsik-mvp] Snapshot watchdog now records the bomi mode count (modes=N, healthy
   is 2) next to the present/MISSING flag, so a recurrence that actually reaches
   persistence is datable to a 4h window instead of being argued from screenshots.
+- [ime-drop-selfheal] 2026-08-06 the enabled-list drop recurred and went unrepaired for
+  three days (2026-08-03 08:35 through 08-06 03:34 -- 19 watchdog runs at modes=0),
+  surfacing to yoros as the IME reverting to the default source on leaving password
+  fields: secure input forces an ASCII source on entry and restores the previously
+  selected one on exit, which cannot work once Bomi is gone from
+  AppleEnabledInputSources. Repaired the live domain by hand (backup of the pre-repair
+  HIToolbox export kept in the session scratchpad), then made the snapshot watchdog
+  repair what it already detects instead of only logging it.
+- [ime-drop-selfheal] Repair adds back only the modes actually absent, so a partial drop
+  does not duplicate the survivor, and it declines to act in three cases that would each
+  do harm: an unreadable list (defaults -array-add CREATES the key, so the array would
+  end up holding only Bomi and ABC plus the Apple layouts would be lost), more than two
+  modes (that is the duplicate-rows incident class, which adding entries only worsens),
+  and a missing ~/Library/Input Methods/Bomi.app (the documented teardown must stick
+  rather than be undone every four hours).
+- [ime-drop-selfheal] Scripts/test-enabled-list-selfheal.sh drives the real script against
+  a throwaway defaults domain and a temporary HOME via four env overrides that launchd
+  never sets, so the check covers all six branches without touching com.apple.HIToolbox;
+  7/7 pass. The launchd job runs the script straight out of the main worktree, so merging
+  to main IS the deploy and there is no staging step.
+- [ime-drop-selfheal] 2026-08-03 05:06's install.sh run ruled out as the trigger: the 05:16
+  watchdog still read modes=2, and the 2026-07-28 kill-to-drop delay was ~6 minutes, so it
+  would have been caught by that run. The only other recorded action in the 05:16-08:35
+  window was deleting a duplicate row in System Settings during the sebeolsik input-source
+  investigation, and exactly the two Bomi entries went missing. The unified log no longer
+  covers that date, so the attribution rests on the watchdog timeline, not a system record.

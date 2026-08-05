@@ -14,8 +14,15 @@
 
 set -uo pipefail
 
-SRC=/tmp/bomi-debug.log
-SWITCH=/tmp/bomi-debug.on
+# The four overrides below exist only so Scripts/test-enabled-list-selfheal.sh can
+# drive this script against a throwaway defaults domain and a temporary HOME,
+# instead of the live input-source list and the real debug log. In normal launchd
+# operation none of them are set and the defaults are what run.
+SRC="${BOMI_DEBUG_LOG:-/tmp/bomi-debug.log}"
+SWITCH="${BOMI_DEBUG_SWITCH:-/tmp/bomi-debug.on}"
+TIS_DOMAIN="${BOMI_TIS_DOMAIN:-com.apple.HIToolbox}"
+IME_BUNDLE="${BOMI_IME_BUNDLE:-$HOME/Library/Input Methods/Bomi.app}"
+
 DIR="$HOME/Library/Application Support/Bomi"
 DURABLE="$DIR/bomi-debug.log"
 OFFSET="$DIR/.offset"
@@ -46,7 +53,7 @@ mkdir -p "$REPORTS"
 #                 will show whether a real recurrence reaches persistence.
 #
 # 2 is the only healthy value: the korean and roman modes, once each.
-enabled_list=$(defaults read com.apple.HIToolbox AppleEnabledInputSources 2>/dev/null)
+enabled_list=$(defaults read "$TIS_DOMAIN" AppleEnabledInputSources 2>/dev/null)
 bomi_modes=$(printf '%s\n' "$enabled_list" | grep -c '"Input Mode" = "com.bomi.inputmethod.bomi\.')
 if [ "$bomi_modes" -gt 0 ]; then
     enabled_state="present"
@@ -54,6 +61,38 @@ else
     enabled_state="MISSING"
 fi
 echo "$(date '+%Y-%m-%d %H:%M') enabled-list: bomi $enabled_state (modes=$bomi_modes, expected 2)" >> "$DIR/maintenance.log"
+
+# Self-heal the drop, because detecting it turned out not to be enough: the
+# 2026-08-03 recurrence sat MISSING through 19 consecutive watchdog runs (three
+# days) while every input-menu rebuild -- and every exit from a password field's
+# secure-input mode, which is where it was finally noticed -- reverted the
+# selection to ABC. Only the modes actually absent are added back, so a partial
+# drop is repaired without disturbing whichever one survived.
+#
+# Three guards, each for a failure this could otherwise cause:
+#   - empty read: `defaults write -array-add` CREATES the key when it is absent,
+#     so repairing off an unreadable list would replace the whole array with just
+#     the Bomi entries and take ABC and the Apple layouts down with it.
+#   - more than two: duplicates are the OTHER incident class above, and adding
+#     entries can only make that worse. Leave it for a human to look at.
+#   - no bundle: once ~/Library/Input Methods/Bomi.app is removed (the documented
+#     teardown), the enabled-list entry SHOULD stay gone rather than being
+#     resurrected every four hours.
+repaired=""
+if [ -n "$enabled_list" ] && [ "$bomi_modes" -lt 2 ] && [ -d "$IME_BUNDLE" ]; then
+    for mode in korean roman; do
+        printf '%s\n' "$enabled_list" | grep -q "com\.bomi\.inputmethod\.bomi\.$mode" && continue
+        defaults write "$TIS_DOMAIN" AppleEnabledInputSources -array-add \
+            "{ \"Bundle ID\" = \"com.bomi.inputmethod.bomi\"; \"Input Mode\" = \"com.bomi.inputmethod.bomi.$mode\"; InputSourceKind = \"Input Mode\"; }"
+        repaired="$repaired $mode"
+    done
+    if [ -n "$repaired" ]; then
+        # The menu agent caches the list; without a restart the repair only shows
+        # up at the next login. Skipped when running against a test domain.
+        [ "$TIS_DOMAIN" = com.apple.HIToolbox ] && killall TextInputMenuAgent 2>/dev/null
+        echo "$(date '+%Y-%m-%d %H:%M') enabled-list: re-enabled$repaired" >> "$DIR/maintenance.log"
+    fi
+fi
 
 # Append only what is new. A current size smaller than the recorded offset means
 # the log was cleared or recreated -- start from the beginning of the new one.
