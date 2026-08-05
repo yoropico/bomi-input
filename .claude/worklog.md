@@ -290,3 +290,6 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   window was deleting a duplicate row in System Settings during the sebeolsik input-source
   investigation, and exactly the two Bomi entries went missing. The unified log no longer
   covers that date, so the attribution rests on the watchdog timeline, not a system record.
+2026-08-06 05:38 | [push] ime-drop-selfheal @ 9f2fc0e -- fix(watchdog): repair the enabled-list drop instead of only logging it
+2026-08-06 05:38 | [PR] https://github.com/yoropico/bomi-input/pull/9
+2026-08-06 05:39 | [land] ime-drop-selfheal -> main (merge #9) -- watchdog self-heal deployed via the main checkout the launchd job runs
