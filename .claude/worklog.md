@@ -293,3 +293,26 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
 2026-08-06 05:38 | [push] ime-drop-selfheal @ 9f2fc0e -- fix(watchdog): repair the enabled-list drop instead of only logging it
 2026-08-06 05:38 | [PR] https://github.com/yoropico/bomi-input/pull/9
 2026-08-06 05:39 | [land] ime-drop-selfheal -> main (merge #9) -- watchdog self-heal deployed via the main checkout the launchd job runs
+- [ime-drop-selfheal] 2026-08-06 ran the TIS disable/repair experiment to settle what the
+  Input Sources pane's "-" button actually does. Result: NEITHER TISDisableInputSource on a
+  single korean-mode instance NOR on the parent input method changed
+  AppleEnabledInputSources at all -- the persisted list stayed at both modes throughout.
+  So the 08-03 drop was not an API-level disable; System Settings must rewrite the
+  persisted list wholesale when a row is removed, which is why an already-inconsistent
+  on-screen list can take out entries nobody selected.
+- [ime-drop-selfheal] The same experiment DID reproduce the user-visible symptom: disabling
+  the parent bounced the selection to ABC while the persisted list still looked healthy.
+  That is the mechanism behind "reverts to the default IME" -- selection can be lost with
+  the enabled list intact, so maintenance.log showing `present (modes=2)` does not by
+  itself prove the symptom is gone.
+- [ime-drop-selfheal] The duplicate rows are real, not a rendering artifact: the enabled
+  runtime list carries com.bomi.inputmethod.bomi.korean and .roman TWICE, both instances
+  backed by the same ~/Library/Input Methods/Bomi.app, alongside the parent
+  com.bomi.inputmethod.bomi. Disabling one instance removes just that instance and
+  re-enabling the mode does NOT bring it back -- only toggling the PARENT off and on
+  regenerates the pair, which places the duplication in the parent-activation path.
+- [ime-drop-selfheal] Corroborating leftover state: Apple's Korean input method currently
+  has parent enabled=NO while its 390Sebulshik mode is still listed in
+  AppleEnabledInputSources and absent from the runtime enabled list. That half-torn shape
+  is what a Settings row removal leaves behind, and it is consistent with the 08-03 edit
+  having rewritten the list rather than disabling one source cleanly.
