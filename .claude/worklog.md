@@ -316,3 +316,26 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   AppleEnabledInputSources and absent from the runtime enabled list. That half-torn shape
   is what a Settings row removal leaves behind, and it is consistent with the 08-03 edit
   having rewritten the list rather than disabling one source cleanly.
+- [ime-dupe-watchdog] The runtime duplicate count is read with python3 + ctypes against
+  Carbon's TIS API rather than a Swift helper, because only TIS sees the per-login runtime
+  list (`defaults read` is blind to it), pyobjc ships no Carbon bindings, and compiling a
+  Swift helper would put the Xcode toolchain on a background job's critical path. Measured
+  0.1s per run with system python3 alone.
+- [ime-dupe-watchdog] The new watchdog check DETECTS the duplicate and deliberately does not
+  repair it: removing a duplicate row is exactly what rewrote the whole persisted array on
+  2026-08-03 and left Bomi out of the enabled list for three days, and the one safe reset
+  (a logout) is a human's decision rather than a background job's.
+- [ime-dupe-watchdog] The launch agent moved from `StartInterval 14400` to six
+  `StartCalendarInterval` entries at HH:30 every 4h, because the interval timer silently
+  stopped firing after 2026-08-06 15:37 for ~13h with no reboot, empty stderr and last exit
+  code 0 -- so the drop self-heal was dormant with no signal. A calendar entry is re-armed
+  per occurrence, and fixed clock times make a missed run visible in maintenance.log.
+  The plist is now version-controlled at Scripts/com.bomi.logsnapshot.plist; it previously
+  existed only in ~/Library/LaunchAgents, where this fix could not survive a reinstall.
+- [ime-dupe-watchdog] A ModeSwitcher.select hardening (take the first ref that actually
+  selects instead of `list.first`, which a duplicate registration can make stale) was
+  written and then REVERTED: `select` has no callers at all -- the toggle goes through
+  `selectViaIMK`, and the 07-22 spec revision already recorded the TIS path as "retained
+  but unused". That also explains the zero "TIS refused" lines across 13MB live + 79MB
+  durable logs: the line cannot be reached. Hardening dead code buys nothing, and the
+  duplicate is already detected from the watchdog where TIS truth is read anyway.

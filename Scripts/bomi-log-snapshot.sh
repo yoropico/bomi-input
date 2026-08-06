@@ -28,6 +28,7 @@ DURABLE="$DIR/bomi-debug.log"
 OFFSET="$DIR/.offset"
 REPORTS="$DIR/reports"
 ANALYZER="$(cd "$(dirname "$0")" && pwd)/analyze-debug-log.py"
+RUNTIME_COUNT="$(cd "$(dirname "$0")" && pwd)/tis-runtime-count.py"
 
 mkdir -p "$REPORTS"
 
@@ -61,6 +62,29 @@ else
     enabled_state="MISSING"
 fi
 echo "$(date '+%Y-%m-%d %H:%M') enabled-list: bomi $enabled_state (modes=$bomi_modes, expected 2)" >> "$DIR/maintenance.log"
+
+# The persisted count above cannot see the duplicate class at all: on 2026-08-07 the
+# runtime list carried the roman mode twice while AppleEnabledInputSources held each
+# mode exactly once, so this watchdog logged a healthy "present (modes=2, expected 2)"
+# with three Bomi rows sitting in the input menu. Only Carbon's TIS API sees that list,
+# which is what tis-runtime-count.py reads.
+#
+# Detection only -- deliberately no repair. Removing a duplicate row is what rewrites
+# the whole persisted array and took Bomi out of the enabled list for three days on
+# 2026-08-03; the known safe reset is a logout, which is a human's call, not a
+# background job's. Skipped for a test domain, where the live runtime list has nothing
+# to do with the seeded one.
+if [ "$TIS_DOMAIN" = com.apple.HIToolbox ] && [ -f "$RUNTIME_COUNT" ]; then
+    runtime=$(python3 "$RUNTIME_COUNT" 2>/dev/null)
+    if [ -z "$runtime" ]; then
+        runtime_state="unreadable"
+    elif [ "${runtime% rows=*}" = "korean=1 roman=1" ]; then
+        runtime_state="healthy"
+    else
+        runtime_state="UNEXPECTED"
+    fi
+    echo "$(date '+%Y-%m-%d %H:%M') runtime-list: bomi $runtime_state ($runtime)" >> "$DIR/maintenance.log"
+fi
 
 # Self-heal the drop, because detecting it turned out not to be enough: the
 # 2026-08-03 recurrence sat MISSING through 19 consecutive watchdog runs (three
