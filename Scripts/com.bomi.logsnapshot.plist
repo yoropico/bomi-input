@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The watchdog + log-snapshot job. Lived only in ~/Library/LaunchAgents until
+  2026-08-07, so the scheduling fix below had nowhere to survive a reinstall; it
+  is version-controlled from here on.
+
+  Install with:
+    cp Scripts/com.bomi.logsnapshot.plist ~/Library/LaunchAgents/
+    launchctl bootout  gui/$(id -u)/com.bomi.logsnapshot 2>/dev/null
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.bomi.logsnapshot.plist
+
+  Remove with:
+    launchctl bootout gui/$(id -u)/com.bomi.logsnapshot
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.bomi.logsnapshot</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/bglee/Project/bomi-input/Scripts/bomi-log-snapshot.sh</string>
+    </array>
+
+    <!-- At login: /tmp has just been cleared, so this restores the logging switch
+         before the day's typing starts. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Fixed times instead of StartInterval 14400. Why: on 2026-08-06 the 4h
+         interval timer stopped firing after 15:37 and stayed silent for ~13h --
+         no reboot (uptime 1d20h), empty stderr, last exit code 0 -- so the
+         enabled-list self-heal was dormant for that whole window without any
+         signal that it had stopped. A calendar entry is re-armed per occurrence
+         and fires on wake if its time passed, which an interval timer that has
+         lost its arming never does. Same 4h cadence, now anchored to the clock,
+         so a missed run is also obvious from the timestamps in maintenance.log. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>0</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>30</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/bglee/Library/Application Support/Bomi/launchd.out</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/bglee/Library/Application Support/Bomi/launchd.err</string>
+</dict>
+</plist>
