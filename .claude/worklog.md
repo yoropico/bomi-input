@@ -339,3 +339,79 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   but unused". That also explains the zero "TIS refused" lines across 13MB live + 79MB
   durable logs: the line cannot be reached. Hardening dead code buys nothing, and the
   duplicate is already detected from the watchdog where TIS truth is read anyway.
+2026-08-06 07:19 | [session end] reason=other
+2026-08-06 07:20 | [session end] reason=other
+- [ime-drop-selfheal] 2026-08-07 recurrence is the DUPLICATE class again, but narrower: only
+  com.bomi.inputmethod.bomi.roman appears twice in the runtime enabled list, korean once.
+  AppleEnabledInputSources / AppleInputSourceHistory / AppleSelectedInputSources each carry
+  the mode exactly once, so nothing reached persistence -- the extra row lives only in the
+  current login session's HIToolbox registry. The two rows are distinct TISInputSource
+  objects (CFEqual false, different pointers) with identical properties and both icon URLs
+  resolving to ~/Library/Input Methods/Bomi.app, so it is a real second registration rather
+  than a rendering artifact.
+- [ime-drop-selfheal] Two candidate causes were ruled out. (1) LaunchServices had a SECOND
+  Bomi.app registered under the same bundle ID -- the gitignored 07-29 build output at
+  ~/Project/bomi-input/Bomi.app. Unregistering it with `lsregister -u` plus a
+  TextInputMenuAgent restart left the duplicate row in place, so the stale registration was
+  not the source; it was left unregistered anyway, since a build artifact has no business in
+  the input-source registry. (2) Bomi's own code cannot create a registration: the sources
+  call only TISCopyCurrentKeyboardInputSource / TISCreateInputSourceList / TISSelectInputSource
+  -- no TISRegisterInputSource or TISEnableInputSource anywhere -- and the installed
+  Info.plist declares each mode once in both tsInputModeListKey and
+  tsVisibleInputModeOrderedArrayKey.
+- [ime-drop-selfheal] The duplicate is cosmetic so far: ModeSwitcher.select takes list.first
+  from the now-2-element match list, and both 13MB live and 79MB durable debug logs contain
+  zero "TIS refused" lines, so every toggle still lands through the fast TIS path rather than
+  the unverifiable IMK fallback.
+- [ime-drop-selfheal] The watchdog cannot see this incident class: bomi-log-snapshot.sh counts
+  only the persisted list, so it logged `present (modes=2, expected 2)` while three Bomi rows
+  were on screen. Separately its 4h launchd timer had stopped firing after 2026-08-06 15:37
+  -- ~13h with no reboot (uptime 1d20h), empty stderr, last exit code 0 -- and
+  `launchctl kickstart` brought it back immediately. So the self-heal for the DROP class was
+  also dormant for that window, which is the part worth fixing first.
+2026-08-07 05:04 | [session end] reason=other
+2026-08-07 05:04 | [session end] reason=other
+2026-08-07 05:05 | [session end] reason=other
+2026-08-07 07:04 | [session end] reason=other
+- [ime-dupe-watchdog] 2026-08-10 recurrence triaged: the duplicate is NOT growing. The runtime
+  TIS enabled list has held exactly one extra `com.bomi.inputmethod.bomi.korean` row since
+  2026-08-07 08:30 (it first appeared 04:40 that day as an extra `roman` row, then moved to
+  korean), and every 4h watchdog run since has logged the same `korean=2 roman=1 rows=6`.
+- [ime-dupe-watchdog] The documented safe reset no longer works: the duplicate SURVIVED the
+  2026-08-10 15:11 reboot -- the 15:12 post-login watchdog run already read korean=2 -- so the
+  skill's "a fresh HIToolbox session resets the runtime list" claim is now falsified and a
+  logout should not be offered as the fix without re-testing it.
+- [ime-dupe-watchdog] Every persisted store is clean, so there is nothing for the self-heal to
+  repair: AppleEnabledInputSources, AppleSelectedInputSources and AppleInputSourceHistory each
+  carry korean and roman exactly once, and the installed Info.plist declares each mode once in
+  both tsInputModeListKey and tsVisibleInputModeOrderedArrayKey.
+- [ime-dupe-watchdog] The two korean rows are indistinguishable by every TIS property probed
+  (type, category, enabled, selected, languages, ASCII-capable, bundle id and
+  kTISPropertyIconImageURL all identical, pointing at ~/Library/Input Methods/Bomi.app), so
+  they are two registrations of the same bundle rather than a stale second copy on disk.
+- [ime-dupe-watchdog] LaunchServices did hold a second registration of bundle id
+  com.bomi.inputmethod.bomi -- the assemble-app.sh build output left in the repo at
+  /Users/bglee/Project/bomi-input/Bomi.app (built 2026-07-29, gitignored) -- and it was
+  unregistered with `lsregister -u`. That is not yet proven to be the cause: the duplicate did
+  not clear immediately, the repo path does not appear anywhere in the rebuilt
+  com.apple.IntlDataCache.le.kbdx (only Methods/Bomi.app does), and the bundle had already sat
+  registered for nine days before the first duplicate. The real test is the next login.
+- [ime-dupe-watchdog] Still cosmetic after 465h of logging: 0 WEDGES in every app, 0 "TIS
+  refused" lines in the 97MB durable log, so every toggle still lands through the fast TIS path
+  despite the extra row.
+2026-08-10 17:20 | [session end] reason=other
+2026-08-10 17:20 | [session end] reason=other
+2026-08-10 17:22 | [session end] reason=other
+- [toggle-fail-terminal] The 2026-08-11 11:45 password-field revert could not be reproduced by driving
+  secure input directly: Carbon EnableSecureEventInput() moved the selection to ABC and
+  DisableSecureEventInput() restored com.bomi.inputmethod.bomi.korean cleanly, even with the duplicate
+  runtime rows present. So the duplicate alone is not sufficient to cause the revert; a second condition
+  is still unidentified, and the 11:45 window has no IME log because the debug switch was off until 11:50.
+- [toggle-fail-terminal] Removing the leftover com.apple.inputmethod.Korean.390Sebulshik row from the
+  persisted AppleEnabledInputSources (backup at scratchpad/HIToolbox.backup.plist) did NOT change the
+  runtime list: still rows=6 with korean=2 plus the parent bundle row, before and after killall
+  TextInputMenuAgent. The runtime registry is per-login, so this test cannot conclude until the next
+  login -- the removal is deliberately left in place so that login decides it.
+2026-08-11 13:06 | [session end] reason=other
+2026-08-11 13:07 | [session end] reason=other
+2026-08-11 13:10 | [session end] reason=other

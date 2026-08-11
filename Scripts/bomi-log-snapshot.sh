@@ -14,13 +14,14 @@
 
 set -uo pipefail
 
-# The four overrides below exist only so Scripts/test-enabled-list-selfheal.sh can
-# drive this script against a throwaway defaults domain and a temporary HOME,
+# The five overrides below exist only so Scripts/test-enabled-list-selfheal.sh can
+# drive this script against throwaway defaults domains and a temporary HOME,
 # instead of the live input-source list and the real debug log. In normal launchd
 # operation none of them are set and the defaults are what run.
 SRC="${BOMI_DEBUG_LOG:-/tmp/bomi-debug.log}"
 SWITCH="${BOMI_DEBUG_SWITCH:-/tmp/bomi-debug.on}"
 TIS_DOMAIN="${BOMI_TIS_DOMAIN:-com.apple.HIToolbox}"
+IS_DOMAIN="${BOMI_IS_DOMAIN:-com.apple.inputsources}"
 IME_BUNDLE="${BOMI_IME_BUNDLE:-$HOME/Library/Input Methods/Bomi.app}"
 
 DIR="$HOME/Library/Application Support/Bomi"
@@ -44,7 +45,7 @@ mkdir -p "$REPORTS"
 # acceptable; a dead IME is not.
 [ -f "$SWITCH" ] || touch "$SWITCH"
 
-# Watchdog for both input-source incident classes, so the next occurrence is
+# Watchdog for the input-source incident classes, so the next occurrence is
 # datable to a 4h window instead of being reconstructed days later from nothing:
 #
 #   2026-07-28 -- Bomi vanished from the persisted enabled list entirely.
@@ -52,16 +53,26 @@ mkdir -p "$REPORTS"
 #                 list. Persisted state turned out clean (the duplication never
 #                 exceeded one extra runtime entry), so the count below is what
 #                 will show whether a real recurrence reaches persistence.
+#   2026-08-11 -- root-caused the duplicates: macOS builds the runtime list by
+#                 concatenating TWO persisted domains without dedup --
+#                 com.apple.HIToolbox AppleEnabledInputSources and
+#                 com.apple.inputsources AppleEnabledThirdPartyInputSources --
+#                 and migrates third-party entries into the latter on its own
+#                 schedule. A mode listed in BOTH is a duplicate menu row.
 #
-# 2 is the only healthy value: the korean and roman modes, once each.
+# "Enabled" is therefore the UNION of the two domains (see the self-heal
+# comment below); healthy is each mode exactly once across the union.
 enabled_list=$(defaults read "$TIS_DOMAIN" AppleEnabledInputSources 2>/dev/null)
+is_list=$(defaults read "$IS_DOMAIN" AppleEnabledThirdPartyInputSources 2>/dev/null)
 bomi_modes=$(printf '%s\n' "$enabled_list" | grep -c '"Input Mode" = "com.bomi.inputmethod.bomi\.')
-if [ "$bomi_modes" -gt 0 ]; then
+tp_modes=$(printf '%s\n' "$is_list" | grep -c '"Input Mode" = "com.bomi.inputmethod.bomi\.')
+union_modes=$((bomi_modes + tp_modes))
+if [ "$union_modes" -gt 0 ]; then
     enabled_state="present"
 else
     enabled_state="MISSING"
 fi
-echo "$(date '+%Y-%m-%d %H:%M') enabled-list: bomi $enabled_state (modes=$bomi_modes, expected 2)" >> "$DIR/maintenance.log"
+echo "$(date '+%Y-%m-%d %H:%M') enabled-list: bomi $enabled_state (hitoolbox=$bomi_modes, third-party=$tp_modes, union expected 2)" >> "$DIR/maintenance.log"
 
 # The persisted count above cannot see the duplicate class at all: on 2026-08-07 the
 # runtime list carried the roman mode twice while AppleEnabledInputSources held each
@@ -86,6 +97,23 @@ if [ "$TIS_DOMAIN" = com.apple.HIToolbox ] && [ -f "$RUNTIME_COUNT" ]; then
     echo "$(date '+%Y-%m-%d %H:%M') runtime-list: bomi $runtime_state ($runtime)" >> "$DIR/maintenance.log"
 fi
 
+# Parent-allowlist watch. The parent "Keyboard Input Method" entry for bomi in
+# com.apple.inputsources is what lets a third-party IME load at all: deleting it
+# took Bomi off the runtime list within minutes on 2026-08-11, and that is the
+# one loss this job cannot repair into visibility without a login anyway, so a
+# MISSING here means "tell a human immediately". The mode counts are
+# informational -- the runtime-list check above is the duplicate detector.
+# Skipped for a test domain, same as the runtime check.
+if [ "$TIS_DOMAIN" = com.apple.HIToolbox ]; then
+    tp_entries=$(printf '%s\n' "$is_list" | grep -c '"Bundle ID" = "com.bomi.inputmethod.bomi"')
+    if printf '%s\n' "$is_list" | grep -A2 '"Bundle ID" = "com.bomi.inputmethod.bomi"' | grep -q 'InputSourceKind = "Keyboard Input Method"'; then
+        tp_state="present"
+    else
+        tp_state="MISSING"
+    fi
+    echo "$(date '+%Y-%m-%d %H:%M') third-party-list: bomi-parent $tp_state (entries=$tp_entries, modes=$tp_modes)" >> "$DIR/maintenance.log"
+fi
+
 # Self-heal the drop, because detecting it turned out not to be enough: the
 # 2026-08-03 recurrence sat MISSING through 19 consecutive watchdog runs (three
 # days) while every input-menu rebuild -- and every exit from a password field's
@@ -93,20 +121,41 @@ fi
 # selection to ABC. Only the modes actually absent are added back, so a partial
 # drop is repaired without disturbing whichever one survived.
 #
+# "Enabled" is the UNION of two persisted domains, and repairs target only the
+# second one. Measured 2026-08-11: macOS builds the runtime list by
+# concatenating the two domains WITHOUT dedup (HIToolbox 4 rows +
+# com.apple.inputsources 1..3 rows = runtime 5..7 rows), and it migrates
+# third-party entries into com.apple.inputsources on its own schedule (that day
+# it moved both bomi modes out of AppleEnabledInputSources minutes after a
+# login and re-listed them under AppleEnabledThirdPartyInputSources). A mode
+# present in BOTH domains is a duplicate menu row -- and this script created
+# exactly that (korean=2 roman=2) by re-adding modes to HIToolbox that macOS
+# had already migrated out. So a mode present in EITHER domain counts as
+# enabled, and missing modes are written to AppleEnabledThirdPartyInputSources.
+#
+# The parent "Keyboard Input Method" entry in com.apple.inputsources is the
+# allowlist that lets a third-party IME load at all (deleting it took Bomi off
+# the runtime list within minutes on 2026-08-11), so a repair ensures it first.
+#
 # Three guards, each for a failure this could otherwise cause:
-#   - empty read: `defaults write -array-add` CREATES the key when it is absent,
-#     so repairing off an unreadable list would replace the whole array with just
-#     the Bomi entries and take ABC and the Apple layouts down with it.
-#   - more than two: duplicates are the OTHER incident class above, and adding
-#     entries can only make that worse. Leave it for a human to look at.
-#   - no bundle: once ~/Library/Input Methods/Bomi.app is removed (the documented
-#     teardown), the enabled-list entry SHOULD stay gone rather than being
+#   - both domains unreadable: `defaults write -array-add` CREATES the key when
+#     it is absent, so repairing off an unreadable world would fabricate a list
+#     holding only Bomi and take ABC and the Apple layouts down with it.
+#   - more than two modes in the union: duplicates are the OTHER incident
+#     class, and adding entries can only make that worse. Leave it for a human.
+#   - no bundle: once ~/Library/Input Methods/Bomi.app is removed (the
+#     documented teardown), the entries SHOULD stay gone rather than being
 #     resurrected every four hours.
 repaired=""
-if [ -n "$enabled_list" ] && [ "$bomi_modes" -lt 2 ] && [ -d "$IME_BUNDLE" ]; then
+if { [ -n "$enabled_list" ] || [ -n "$is_list" ]; } && [ "$union_modes" -lt 2 ] && [ -d "$IME_BUNDLE" ]; then
+    if ! printf '%s\n' "$is_list" | grep -A2 '"Bundle ID" = "com.bomi.inputmethod.bomi"' | grep -q 'InputSourceKind = "Keyboard Input Method"'; then
+        defaults write "$IS_DOMAIN" AppleEnabledThirdPartyInputSources -array-add \
+            '{ "Bundle ID" = "com.bomi.inputmethod.bomi"; InputSourceKind = "Keyboard Input Method"; }'
+        repaired=" parent-allowlist"
+    fi
     for mode in korean roman; do
-        printf '%s\n' "$enabled_list" | grep -q "com\.bomi\.inputmethod\.bomi\.$mode" && continue
-        defaults write "$TIS_DOMAIN" AppleEnabledInputSources -array-add \
+        printf '%s\n' "$enabled_list" "$is_list" | grep -q "com\.bomi\.inputmethod\.bomi\.$mode" && continue
+        defaults write "$IS_DOMAIN" AppleEnabledThirdPartyInputSources -array-add \
             "{ \"Bundle ID\" = \"com.bomi.inputmethod.bomi\"; \"Input Mode\" = \"com.bomi.inputmethod.bomi.$mode\"; InputSourceKind = \"Input Mode\"; }"
         repaired="$repaired $mode"
     done
@@ -114,7 +163,7 @@ if [ -n "$enabled_list" ] && [ "$bomi_modes" -lt 2 ] && [ -d "$IME_BUNDLE" ]; th
         # The menu agent caches the list; without a restart the repair only shows
         # up at the next login. Skipped when running against a test domain.
         [ "$TIS_DOMAIN" = com.apple.HIToolbox ] && killall TextInputMenuAgent 2>/dev/null
-        echo "$(date '+%Y-%m-%d %H:%M') enabled-list: re-enabled$repaired" >> "$DIR/maintenance.log"
+        echo "$(date '+%Y-%m-%d %H:%M') enabled-list: re-enabled$repaired (in $IS_DOMAIN)" >> "$DIR/maintenance.log"
     fi
 fi
 

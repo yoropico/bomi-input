@@ -29,8 +29,11 @@ Bomi is a native macOS input method (IME) implementing the **Sebeolsik-final (�
 swift build                 # debug build
 swift build -c release      # release build
 swift test                  # all unit tests (currently 35, all must pass)
-./Scripts/assemble-app.sh   # -> Bomi.app at repo root (ad-hoc signed)
-./Scripts/install.sh        # -> ~/Library/Input Methods/Bomi.app
+./Scripts/assemble-app.sh   # -> .build/Bomi-staging (ad-hoc signed; NO .app extension on
+                            #    purpose — LaunchServices auto-registers any *.app it discovers,
+                            #    and a second registered copy of the bundle duplicates the
+                            #    input-menu rows at next login)
+./Scripts/install.sh        # .build/Bomi-staging -> ~/Library/Input Methods/Bomi.app
 ```
 
 There is no linter/formatter config and no CI in the repo; `swift build` (warnings-clean) and `swift test` are the gates. Both pass clean as of this writing.
@@ -64,6 +67,8 @@ Scripts/analyze-debug-log.py [path]
 ```
 
 The switch file is re-checked at most once every 5s behind a lock; writes are serialized off the input thread. **Never `killall Bomi` to bounce logging (or for anything else while it is the selected input source):** a selected-but-dead IME until the next keystroke is how Bomi got dropped from `AppleEnabledInputSources` on 2026-07-28, causing intermittent reverts to the default input source. `bomi-log-snapshot.sh` (via launchd) preserves the log across reboots into `~/Library/Application Support/Bomi/` and logs each run whether Bomi is still in the persisted enabled list (`maintenance.log`).
+
+"Enabled" is the UNION of two defaults domains — `com.apple.HIToolbox AppleEnabledInputSources` and `com.apple.inputsources AppleEnabledThirdPartyInputSources` — which macOS concatenates into the runtime list **without dedup** (2026-08-11: a mode in both = a duplicate input-menu row; macOS also migrates third-party entries into the latter domain on its own). The parent `Keyboard Input Method` entry in `com.apple.inputsources` is the allowlist that lets the IME load at all. The watchdog's self-heal therefore counts the union and repairs only into `AppleEnabledThirdPartyInputSources`; never hand-write either domain without backing up first (`defaults export`).
 
 ## Security and privacy considerations
 
