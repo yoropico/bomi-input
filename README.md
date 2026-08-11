@@ -48,10 +48,15 @@ swift test
 ./Scripts/assemble-app.sh
 ```
 
-This runs a release build, assembles `Bomi.app` at the repo root
+This runs a release build, assembles the app bundle at `.build/Bomi-staging`
 (`Contents/MacOS/Bomi`, `Contents/Info.plist`,
 `Contents/Resources/*.png` plus the localized `*.lproj` strings), and
-ad-hoc code-signs it.
+ad-hoc code-signs it. The staging directory deliberately does NOT end in
+`.app`: LaunchServices auto-registers every `*.app` bundle it discovers
+anywhere under the home directory, and a second registered copy of the
+input-method bundle makes macOS list duplicate Bomi rows in the input
+menu. `install.sh` gives it the `.app` name only at the final
+destination, `~/Library/Input Methods/`.
 
 ## Install
 

@@ -2,7 +2,15 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 swift build -c release
-APP="Bomi.app"
+# Stage the bundle WITHOUT the .app extension. LaunchServices' lsd registers
+# every *.app bundle it discovers anywhere under the home directory -- dot-dirs
+# included (verified 2026-08-11: an earlier .build/Bomi.app staging output was
+# registered within minutes of assembly). A second registration of
+# com.bomi.inputmethod.bomi next to ~/Library/Input Methods/Bomi.app makes
+# HIToolbox register the input modes twice at login -- the duplicate
+# "Sebeolsik Final" rows in the input menu (2026-08-07/08-10/08-11 incidents).
+# `lsregister -u` is not a fix: lsd re-registers the file while it exists.
+APP=".build/Bomi-staging"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/Bomi "$APP/Contents/MacOS/Bomi"
