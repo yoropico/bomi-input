@@ -129,7 +129,8 @@ final class BomiInputController: IMKInputController {
         }
     }
 
-    private func handleKeyEvent(keyCode: UInt16, flags: NSEvent.ModifierFlags, client: IMKTextInput) -> Bool {
+    private func handleKeyEvent(keyCode: UInt16, flags: NSEvent.ModifierFlags,
+                                timestamp: TimeInterval, client: IMKTextInput) -> Bool {
         // Modifiers other than Shift: commit and pass through (e.g. Cmd+C).
         if flags.contains(.command) || flags.contains(.control) || flags.contains(.option) {
             flush(client)
@@ -158,7 +159,9 @@ final class BomiInputController: IMKInputController {
             flush(client); return false
         }
 
-        let committed = composer.inputASCII(ascii)
+        // Timed input enables 모아치기: near-simultaneous keys assemble into one
+        // syllable regardless of arrival order (see HangulComposer.chordWindow).
+        let committed = composer.inputASCII(ascii, at: timestamp)
         commit(committed, client)
         showPreedit(client)
         return true
@@ -184,11 +187,12 @@ final class BomiInputController: IMKInputController {
         let keyCode = event.keyCode
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let chars = event.characters ?? ""
+        let timestamp = event.timestamp
         return MainActor.assumeIsolated {
             guard let client = boxed.value as? IMKTextInput else { return false }
             DebugLog.log("\(self.tag) keyDown keyCode=\(keyCode) chars='\(chars)' "
                          + "flags=0x\(String(flags.rawValue, radix: 16)) mode=\(ModeState.current.rawValue)")
-            return self.handleKeyEvent(keyCode: keyCode, flags: flags, client: client)
+            return self.handleKeyEvent(keyCode: keyCode, flags: flags, timestamp: timestamp, client: client)
         }
     }
 
