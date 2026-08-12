@@ -188,10 +188,16 @@ final class BomiInputController: IMKInputController {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let chars = event.characters ?? ""
         let timestamp = event.timestamp
+        // Press→IME arrival latency. NSEvent.timestamp and systemUptime share a
+        // clock, so this exposes upstream (app event queue / WindowServer) delay
+        // that per-key cadence alone cannot show. Field consumed by
+        // Scripts/analyze-debug-log.py and the BCT-side probe's stage split.
+        let arrivalMs = (ProcessInfo.processInfo.systemUptime - timestamp) * 1000
         return MainActor.assumeIsolated {
             guard let client = boxed.value as? IMKTextInput else { return false }
             DebugLog.log("\(self.tag) keyDown keyCode=\(keyCode) chars='\(chars)' "
-                         + "flags=0x\(String(flags.rawValue, radix: 16)) mode=\(ModeState.current.rawValue)")
+                         + "flags=0x\(String(flags.rawValue, radix: 16)) mode=\(ModeState.current.rawValue) "
+                         + "lat=\(String(format: "%.0f", arrivalMs))ms")
             return self.handleKeyEvent(keyCode: keyCode, flags: flags, timestamp: timestamp, client: client)
         }
     }
