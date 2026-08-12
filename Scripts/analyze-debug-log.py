@@ -66,6 +66,7 @@ class AppStat:
         self.dropped = 0
         self.wrong_mode = 0
         self.first_after_toggle = 0
+        self.arrivals = []      # press->IME arrival ms, from keyDown lat= (2026-08-13+)
         self.instances = set()
         self.examples = []
 
@@ -108,6 +109,9 @@ def main():
                 st.dropped += 1
         elif rest.startswith("keyDown"):
             st.keydowns += 1
+            m = re.search(r"lat=(-?\d+)ms", rest)
+            if m:
+                st.arrivals.append(int(m.group(1)))
             if pending_target:
                 st.first_after_toggle += 1
                 m = re.search(r"mode=(\S+)", rest)
@@ -155,7 +159,8 @@ def main():
     span_h = (events[-1][0] - events[0][0]) / 3600
     print(f"{LOG}: {len(events)} events over {span_h:.1f}h\n")
 
-    hdr = f"{'app':<34}{'toggles':>8}{'WEDGES':>8}{'sup':>6}{'keys':>8}{'p50':>6}{'p95':>6}{'max':>6}{'fail':>6}"
+    hdr = (f"{'app':<34}{'toggles':>8}{'WEDGES':>8}{'sup':>6}{'keys':>8}{'p50':>6}{'p95':>6}{'max':>6}{'fail':>6}"
+           f"{'aP95':>6}{'aMax':>6}")
     print(hdr)
     print("-" * len(hdr))
 
@@ -165,8 +170,11 @@ def main():
         p95 = L[int(len(L) * 0.95)] if L else 0
         mx = L[-1] if L else 0
         fail = st.not_landed + st.fallbacks + st.dropped
+        A = sorted(st.arrivals)
+        ap95 = A[int(len(A) * 0.95)] if A else 0
+        amax = A[-1] if A else 0
         print(f"{name:<34}{st.fires:>8}{st.wedges:>8}{st.suppressed:>6}"
-              f"{st.keydowns:>8}{p50:>6}{p95:>6}{mx:>6}{fail:>6}")
+              f"{st.keydowns:>8}{p50:>6}{p95:>6}{mx:>6}{fail:>6}{ap95:>6}{amax:>6}")
 
     for name, st in sorted(stats.items(), key=lambda kv: -kv[1].fires):
         if st.fires or st.keydowns:
@@ -184,6 +192,7 @@ def main():
         total.dropped += st.dropped
         total.wrong_mode += st.wrong_mode
         total.first_after_toggle += st.first_after_toggle
+        total.arrivals += st.arrivals
     print("-" * len(hdr))
     row("TOTAL", total)
 
@@ -191,7 +200,9 @@ def main():
           f"{total.wrong_mode} handled in the pre-toggle mode")
     print("columns: WEDGES = toggle died (the bug); sup = duplicate presses correctly "
           "suppressed; p50/p95/max = ms for the switch to land in TIS; "
-          "fail = didn't land + TIS fallbacks + dropped events")
+          "fail = didn't land + TIS fallbacks + dropped events; "
+          "aP95/aMax = ms from hardware press to IME arrival (upstream queue delay; "
+          "0 on lines predating the lat= field)")
 
     zero = [n for n, st in stats.items() if st.fires == 0 and st.keydowns > 200]
     if zero:
