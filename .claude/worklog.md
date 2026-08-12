@@ -415,3 +415,10 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
 2026-08-11 13:06 | [session end] reason=other
 2026-08-11 13:07 | [session end] reason=other
 2026-08-11 13:10 | [session end] reason=other
+- [moachigi-chord] Chord window is 150ms and lives in the ENGINE, not the controller: the
+  decision "same syllable or new one" needs the previous key's time, which only the composer
+  has across calls. 90-133ms real rolls from the 514h log set the floor; untimed inputASCII
+  kept as the never-chord path so every existing test and non-IMK caller is untouched.
+- [moachigi-chord] Deliberate lone-jamo typing (e.g. lone vowel then a syllable) inside the
+  window WILL now merge — accepted: that is the definition of chord typing, and the window
+  keeps it rare. Knob left as a public var, promote to Preferences only if daily use demands.
