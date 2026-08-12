@@ -6,6 +6,14 @@ public struct HangulComposer {
     private var jong: UInt32 = 0
     private var stack: [UInt32] = []   // push order; last = most recent (peek); used for backspace
 
+    /// 모아치기 (chord typing): two keys within this many seconds may fill empty
+    /// slots out of canonical order (jung/jong arriving before their cho).
+    /// Safe on this layout because Sebeolsik-final keys are slot-distinct.
+    /// ponytail: fixed knob; observed real rolls were 90–133ms apart. Promote to
+    /// a Preference if daily typing wants tuning.
+    public var chordWindow: Double = 0.15
+    private var lastKeyTime: Double = -.infinity
+
     public init() {}
 
     public var isComposing: Bool { !stack.isEmpty }
@@ -32,8 +40,22 @@ public struct HangulComposer {
 
     public mutating func flush() -> String { drain() }
 
-    /// Process one Sebeolsik-final ASCII key. Returns text to commit to the client (possibly empty).
+    /// Timed entry point: keys closer together than `chordWindow` may assemble
+    /// out of order (모아치기). `time` is any monotonic clock in seconds
+    /// (NSEvent.timestamp / systemUptime).
+    public mutating func inputASCII(_ ascii: UInt32, at time: Double) -> String {
+        let chord = time - lastKeyTime <= chordWindow
+        lastKeyTime = time
+        return input(ascii, chord: chord)
+    }
+
+    /// Untimed entry point: never chords (legacy behavior).
     public mutating func inputASCII(_ ascii: UInt32) -> String {
+        input(ascii, chord: false)
+    }
+
+    /// Process one Sebeolsik-final ASCII key. Returns text to commit to the client (possibly empty).
+    private mutating func input(_ ascii: UInt32, chord: Bool) -> String {
         guard let value = SebeolsikFinal.jamo(forASCII: ascii) else {
             // Not in the 3f map (e.g. space): commit current, let caller pass the key through.
             return drain()
@@ -42,7 +64,10 @@ public struct HangulComposer {
         switch Jamo.slot(of: value) {
         case .cho:
             if cho == 0 {
-                if jung != 0 || jong != 0 { commit += drain() }
+                // A cho with jung/jong already present is a new syllable when
+                // typed deliberately, but a chord-window arrival is the same
+                // syllable's cho landing late — fill instead of splitting.
+                if !chord, jung != 0 || jong != 0 { commit += drain() }
                 push(value)
             } else if Jamo.isCho(peek),
                       case let comb = Combination.combine(cho, value, allowChoToJong: false),
@@ -53,7 +78,7 @@ public struct HangulComposer {
             }
         case .jung:
             if jung == 0 {
-                if jong != 0 { commit += drain() }
+                if !chord, jong != 0 { commit += drain() }
                 push(value)
             } else if Jamo.isJung(peek),
                       case let comb = Combination.combine(jung, value),
