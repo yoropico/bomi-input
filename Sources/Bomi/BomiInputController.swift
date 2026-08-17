@@ -252,17 +252,24 @@ final class BomiInputController: IMKInputController {
         }
     }
 
+    /// A client can ask for a forced commit at any moment, including mid-syllable.
+    /// Apple Mail's recipient field does exactly that while its completion runs:
+    /// measured on-device, ~150ms after a keystroke it asks for a commit with the
+    /// syllable still half-built (`preedit='혀'`, `preedit='ㄹ'`). Honouring it
+    /// commits a partial syllable, so the following jamo can no longer join it and
+    /// the field fills with loose jamo ('김ㅕㄴ') — which then matches no contact and
+    /// takes the suggestion list down with it. Apple's own 2-Set Korean does not
+    /// break here, so it does not commit on this request either.
+    ///
+    /// Ignoring the request costs nothing, because every real end of composition
+    /// still flushes through another path: `deactivateServer` (focus/app change),
+    /// `setValue` (language change), and the modifier/passthrough branches of
+    /// `handleKeyEvent`.
     nonisolated override func commitComposition(_ sender: Any!) {
         let boxed = UncheckedSendableBox(value: sender)
         MainActor.assumeIsolated {
-            if let client = self.client(boxed.value) {
-                self.flush(client)
-            } else {
-                let tail = self.composer.flush()
-                if !tail.isEmpty {
-                    DebugLog.log("\(self.tag) commitComposition LOST '\(tail)': no IMKTextInput client")
-                }
-            }
+            let app = (self.client(boxed.value)?.bundleIdentifier()) ?? "(nil)"
+            DebugLog.log("\(self.tag) commitComposition app=\(app) preedit='\(self.composer.preedit)' IGNORED")
         }
     }
 
