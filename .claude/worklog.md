@@ -422,3 +422,17 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
 - [moachigi-chord] Deliberate lone-jamo typing (e.g. lone vowel then a syllable) inside the
   window WILL now merge — accepted: that is the definition of chord typing, and the window
   keeps it rare. Knob left as a public var, promote to Preferences only if daily use demands.
+- [mail-commit-probe] Apple Mail's recipient field asks for a commit ~150ms after a
+  keystroke while its completion runs, with the syllable still half-built (logged
+  preedit='혀', preedit='ㄹ'). Honouring commitComposition there split the syllable, so
+  the next jamo started a new one and the field filled with loose jamo ('김ㅕㄴ'), which
+  matches no contact and takes the suggestion list down. Fix: commitComposition no
+  longer flushes. Apple 2-Set Korean survives the same request, so it does not commit
+  on it either.
+- [mail-commit-probe] Rejected first: implementing composedString so IMK reports the
+  real preedit. Mail sent commitComposition just the same, so "IMK thinks we are not
+  composing" was not the trigger. Reverted rather than kept as a harmless extra.
+- [mail-commit-probe] Ignoring the request is safe because every real end of composition
+  flushes elsewhere -- deactivateServer, setValue on language change, and the
+  modifier/passthrough branches of handleKeyEvent. No unit test: the change is the
+  ABSENCE of a call inside an IMKInputController callback, verified on-device instead.
