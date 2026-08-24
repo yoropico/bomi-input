@@ -545,3 +545,20 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   replacementRange to a client that does not report length/caret, because the range means
   something different to it. Any future fix must establish that capability before using ranges,
   and the shipped default must stay noRange.
+- [mail-field-probe] Reproducible defect isolated in the SHIPPED behaviour (not a regression from
+  this branch): an ignored commitComposition makes the next flush delete the syllable instead of
+  committing it. Log 19:53, three cases one minute apart.
+  19:53:29.692 commitComposition '호' IGNORED, then 19:53:31.617 flush -> field '최승호' becomes
+  '최승' (len 3 -> 2). Again at 19:53:46.501 / 19:53:47.976, same loss.
+  Control at 19:53:34.609: '호' marked, NO commitComposition arrives, flush at 19:53:36.130 keeps
+  '최승호' (len 3). The only difference between kept and lost is whether commitComposition fired.
+- [mail-field-probe] Reading: after we return from commitComposition having written nothing, the
+  composition is treated as over and the marked text is dropped, so our later insertText at
+  noRange has no marked range to replace and the syllable is discarded rather than committed.
+  The client still reports marked=2+1 while we are inside the callback, so the drop happens after
+  we return -- which is why nothing on our side could see it before.
+- [mail-field-probe] This is what "the last word never completes and vanishes" means, and it dates
+  from PR #13, not from anything on this branch. Candidate fix that stays inside the range
+  constraint: end the composition explicitly in flush (setMarkedText "" then insertText at
+  noRange) instead of relying on insertText to replace a marked range that may already be gone.
+  Not implemented -- four attempts have been reverted, so this one gets agreed before it ships.
