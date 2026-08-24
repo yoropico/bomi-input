@@ -463,3 +463,13 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   rule, so the completion remainder survived as literal text (len stayed 41). Passing noRange
   consumes the whole thing: at 16:35:44.453 the same write took the field from 41 chars back to
   a clean '김형'. The range bookkeeping was the defect, not honouring the request.
+- [mail-field-probe] Fix #3 = fix #2's forced commit kept, but the replacement range is no
+  longer trusted from memory alone. takeReplacementRange unions the recorded range with the
+  client's live markedRange and selectedRange at write time, so Mail's selected completion
+  remainder is swallowed the way a plain keystroke would swallow it. noRange stays the path for
+  every write outside a forced commit, because the client's own rule already does the right
+  thing there -- that was the lesson of fix #2, which overrode it and orphaned the remainder.
+- [mail-field-probe] The union is bounded to ranges that touch ours (other.location <=
+  NSMaxRange(range) && NSMaxRange(other) >= range.location). Without it a selection sitting
+  elsewhere in the document would be merged in and deleted; the completion remainder always
+  abuts, so the bound costs nothing real.
