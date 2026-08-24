@@ -450,3 +450,16 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   selectedRange/markedRange after every setMarkedText, commit and flush, and at
   commitComposition itself. Gated on DebugLog.isEnabled because each call is synchronous IPC
   into the client and must not sit on the keystroke path of a shipped build.
+- [mail-field-probe] The before-write probe answered it in one keystroke. Log 16:35:44.452,
+  right before our setMarkedText '형': len=41 text='김상태_센터장(영업센터) - stkim1@rsautomation.co.kr'
+  sel=1+40 marked=1+1. Mail had already committed its completion into the field with the
+  remainder SELECTED from index 1 to the end, computed from '김' alone -- our marked '혀' was
+  not in the query and Mail overwrote it. That is the reported bug, exactly: 김형 typed, 김상태 offered.
+- [mail-field-probe] So the original reading was right and my retraction after fix #2 was wrong:
+  Mail queries on the text it received as committed. Fix #2's forced commit DID produce the
+  correct candidate (김형태 for 김형) -- that part worked and should be kept.
+- [mail-field-probe] What killed fix #2 was the write that followed, not the commit. Passing an
+  explicit replacementRange bypasses the client's own "replace marked range plus selection"
+  rule, so the completion remainder survived as literal text (len stayed 41). Passing noRange
+  consumes the whole thing: at 16:35:44.453 the same write took the field from 41 chars back to
+  a clean '김형'. The range bookkeeping was the defect, not honouring the request.

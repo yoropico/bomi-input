@@ -82,6 +82,7 @@ final class BomiInputController: IMKInputController {
 
     private func showPreedit(_ client: IMKTextInput) {
         let s = composer.preedit
+        probeClient(client, "before setMarkedText")
         DebugLog.log("    \(tag) -> setMarkedText '\(s)'")
         client.setMarkedText(s, selectionRange: NSRange(location: s.utf16.count, length: 0),
                              replacementRange: noRange)
@@ -90,6 +91,7 @@ final class BomiInputController: IMKInputController {
 
     private func commit(_ text: String, _ client: IMKTextInput) {
         guard !text.isEmpty else { return }
+        probeClient(client, "before commit")
         DebugLog.log("    \(tag) -> insertText '\(text)' (commit)")
         client.insertText(text, replacementRange: noRange)
         probeClient(client, "after commit")
@@ -99,6 +101,7 @@ final class BomiInputController: IMKInputController {
     private func flush(_ client: IMKTextInput) {
         let tail = composer.flush()
         if !tail.isEmpty {
+            probeClient(client, "before flush")
             DebugLog.log("    \(tag) -> insertText '\(tail)' (flush)")
             client.insertText(tail, replacementRange: noRange)
             probeClient(client, "after flush")
