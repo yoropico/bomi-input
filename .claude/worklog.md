@@ -531,3 +531,17 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
 - [mail-field-probe] Capability probing is ambiguous exactly where it matters: an empty NSTextView
   and BCT both answer length()=0 before the first write, so the mode cannot be chosen up front and
   switching protocols mid-syllable is where corruption has lived every time so far.
+- [mail-field-probe] Fix #3 turned out to break BCT too, which is why the last word got cut:
+  log 17:30:29 forced-commits '트' and records forcedCommit=0+1, then 17:30:31.561 flushes with
+  replacing=0+1. BCT reports len=0 sel=0+0, so that range is not the syllable we just wrote --
+  it is absolute position 0, the START of the line. Any client that cannot report coordinates
+  gets an explicit range that points at the wrong text.
+- [mail-field-probe] So all three post-main changes regressed a real workflow: fix #2 welded a
+  stranger's address into Mail recipients, fix #3 overwrites line-start text in coordinate-less
+  clients, and the committed-text protocol appended every intermediate jamo there. Restored
+  Sources/Bomi/BomiInputController.swift to 901a707, which is behaviourally identical to main
+  (commitComposition ignored, every write at noRange) and keeps only the gated probes.
+- [mail-field-probe] The rule this cost four attempts to learn: never send an explicit
+  replacementRange to a client that does not report length/caret, because the range means
+  something different to it. Any future fix must establish that capability before using ranges,
+  and the shipped default must stay noRange.
