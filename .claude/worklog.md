@@ -562,3 +562,16 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   constraint: end the composition explicitly in flush (setMarkedText "" then insertText at
   noRange) instead of relying on insertText to replace a marked range that may already be gone.
   Not implemented -- four attempts have been reverted, so this one gets agreed before it ships.
+- [mail-field-probe] Implemented the agreed fix: flush now ends the composition explicitly
+  (setMarkedText "" then insertText at noRange) instead of relying on insertText to replace a
+  marked range the client may already have dropped. Scoped to flush alone -- commit was measured
+  working through the same window (17:36:01.705 IGNORED then 17:36:03.394 commit kept '김형'), so
+  it is left untouched; flush is the shared blur/passthrough/mode-change path, so one change
+  covers every caller that loses text.
+- [mail-field-probe] Deliberately coordinate-free. An explicit replacementRange is what made the
+  last four attempts unshippable, since BCT reports len=0 sel=0+0 and writes such a range at
+  position 0; clearing the preedit needs no coordinates at all and so cannot mean something
+  different there.
+- [mail-field-probe] Added a probe between the two calls ("after ending composition") because the
+  intermediate state is the thing to check if this fails: the field should briefly lose the marked
+  syllable and then get it back as committed text, and a client that keeps it would double it.

@@ -96,9 +96,28 @@ final class BomiInputController: IMKInputController {
     }
 
     /// Flush any in-progress syllable to the client. Used on blur/commit/mode change.
+    ///
+    /// The composition is ended **explicitly** first, rather than letting
+    /// `insertText` do it by replacing the marked range. Measured 2026-08-24 in
+    /// Mail's recipient field: after a `commitComposition` we ignored, a flush
+    /// driven by a passthrough key took '최승호' down to '최승' (19:53:29.692 then
+    /// 19:53:31.617, and again at 19:53:46.501/47.976) — the syllable was
+    /// discarded instead of committed. The control case one minute later, same
+    /// keys but with no commit request in between, kept it. By then the client had
+    /// dropped the marked text on its own, so there was no range left for
+    /// `insertText` to replace and the text went nowhere.
+    ///
+    /// Clearing the preedit and then inserting is the same two steps in a fixed
+    /// order, and it needs no coordinates — which matters because an explicit
+    /// `replacementRange` means something else entirely to a client that does not
+    /// report its length or caret (BCT writes it at position 0).
     private func flush(_ client: IMKTextInput) {
         let tail = composer.flush()
         if !tail.isEmpty {
+            DebugLog.log("    \(tag) -> setMarkedText '' (end composition before flush)")
+            client.setMarkedText("", selectionRange: NSRange(location: 0, length: 0),
+                                 replacementRange: noRange)
+            probeClient(client, "after ending composition")
             DebugLog.log("    \(tag) -> insertText '\(tail)' (flush)")
             client.insertText(tail, replacementRange: noRange)
             probeClient(client, "after flush")
