@@ -473,3 +473,24 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   NSMaxRange(range) && NSMaxRange(other) >= range.location). Without it a selection sitting
   elsewhere in the document would be merged in and deleted; the completion remainder always
   abuts, so the bound costs nothing real.
+- [mail-field-probe] Fix #3 partly works and is kept deployed: it is the first build where Mail
+  ever resolves the right person. Log 17:09:45.621, after the forced commit of '린', the client
+  held '김형 (Shawn Kim(김형린) - shawnkim@rsautomation.co.kr) ' -- the correct contact, matched
+  on the full 김형린. The field also stays clean (writes take it back to '김형린'), so none of
+  fix #2's welding of a stranger's address remains.
+- [mail-field-probe] What is still wrong is the INTERMEDIATE candidate. At the '형' stage the
+  forced commit leaves the field committed as '김형', yet Mail answers with
+  '김상태_센터장(영업센터) - stkim1@rsautomation.co.kr' (17:09:43.792 before-probe), a match that
+  contains no 형 at all. Once 린 is committed the same mechanism answers correctly, so Mail is
+  not simply matching our committed text the way three fixes have assumed.
+- [mail-field-probe] Separate defect found in the same log: a passthrough flush on Right-Arrow
+  does not take. 17:09:23.475 wrote '형' over replacing=1+40 and the after-probe shows the field
+  byte-identical at len=41 sel=1+40, while the same write from Space (17:09:36.200) and from a
+  jamo key (17:09:43.792) both collapse it to '김형'. Not the reported bug; do not fold it into
+  the same fix.
+- [mail-field-probe] Three fixes have now failed on the same seam, which per systematic-debugging
+  is the point to stop patching and question the design. The premise every attempt shares is that
+  a marked syllable can coexist with Mail's async completion rewriting the same field -- two
+  writers, no synchronisation. Before attempt #4, measure Apple 2-Set Korean typing 김형린 in the
+  same field: if it also shows 김상태 mid-name, the intermediate candidate is Mail's own behaviour
+  and the remaining work is nothing.
