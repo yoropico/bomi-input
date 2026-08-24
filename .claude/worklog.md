@@ -450,3 +450,21 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   selectedRange/markedRange after every setMarkedText, commit and flush, and at
   commitComposition itself. Gated on DebugLog.isEnabled because each call is synchronous IPC
   into the client and must not sit on the keystroke path of a shipped build.
+- [mail-field-probe] Probe settled it (log 16:25:04-05, typing 김형 into Mail's To: field).
+  The field genuinely reads '김형' -- CLIENT[after setMarkedText] len=2 text='김형' marked=1+1 --
+  so Mail can see the whole string and the earlier "Mail only sees the committed prefix"
+  guess was wrong about the TEXT. What Mail acts on is the last text it received as
+  committed, which was '김' alone; it asks commitComposition to get the rest, and refusing
+  froze its completion on '김'. That is why the suggestion showed 김상태 for 7 seconds while
+  the field showed 김형, and why Right-Arrow (a passthrough flush) was the user's workaround.
+- [mail-field-probe] Fix: stop treating "commit to the client" and "end the composition" as
+  one operation. commitComposition now pushes the syllable out AND keeps composing, recording
+  where it landed in forcedCommit; the next setMarkedText/insertText passes that as
+  replacementRange so the same syllable keeps growing in place instead of a new one starting.
+  Both previous behaviours were the same bug seen from opposite sides.
+- [mail-field-probe] markedRange() is the anchor, not selectedRange(): the probe shows the
+  client reporting sel=none len=0 at the instant of commitComposition (Mail has torn the field
+  down to apply its completion) while marked=1+1 is still correct.
+- [mail-field-probe] forcedCommit is cleared in flush, activateServer, deactivateServer and the
+  language-change path, so a range captured against a previous focus can never be replayed.
+  Inert for every app that never forces a commit -- they keep passing noRange exactly as before.
