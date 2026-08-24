@@ -494,3 +494,12 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   writers, no synchronisation. Before attempt #4, measure Apple 2-Set Korean typing 김형린 in the
   same field: if it also shows 김상태 mid-name, the intermediate candidate is Mail's own behaviour
   and the remaining work is nothing.
+- [mail-field-probe] Apple 2-Set resolves 김형린 correctly in the same field (yoros, 2026-08-24),
+  so the intermediate wrong candidate is OURS, not Mail's. That kills the "nothing left to do"
+  branch and means our call sequence differs from Apple's somewhere we have never looked.
+- [mail-field-probe] Every fix so far reasoned from our own side of the boundary, which is why
+  three in a row missed. Added Scripts/imk-client-trace.swift: an NSTextView subclass that logs
+  insertText/setMarkedText/unmarkText/rangeForUserCompletion with the field state after each.
+  Typing the same text under each input source gives a direct diff of what the two IMEs send.
+  rangeForUserCompletion is traced on purpose -- NSTextView refuses to complete while marked
+  text exists, so when it turns into a real range is likely the whole answer.
