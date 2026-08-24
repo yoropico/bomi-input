@@ -436,3 +436,17 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   flushes elsewhere -- deactivateServer, setValue on language change, and the
   modifier/passthrough branches of handleKeyEvent. No unit test: the change is the
   ABSENCE of a call inside an IMKInputController callback, verified on-device instead.
+- [mail-field-probe] The two Mail bugs are one root cause, not two: commitComposition is the
+  only point where Mail syncs its completion with our composer. Honouring it split the
+  syllable (loose jamo, matched nobody); ignoring it leaves the last syllable marked, and
+  Mail reported 2026-08-24 that it now selects an unrelated contact. Text on screen is
+  correct in the new failure mode, which is why it reads as "slightly odd" rather than broken.
+- [mail-field-probe] Evidence for the second mode, log 09:01:44-50 (typing 최승호): Mail asked
+  for a commit twice with '승' and '호' still marked, both IGNORED, and the user immediately
+  backspaced twice, retyped, pressed Right-Arrow to shake off the completion, then Return.
+- [mail-field-probe] Cannot decide the fix from our own log: it records what we SEND, never
+  what the client holds, so whether Mail matches on the marked text or only the committed
+  prefix is unanswerable from here. Added probeClient() reading back client.length/string/
+  selectedRange/markedRange after every setMarkedText, commit and flush, and at
+  commitComposition itself. Gated on DebugLog.isEnabled because each call is synchronous IPC
+  into the client and must not sit on the keystroke path of a shipped build.
