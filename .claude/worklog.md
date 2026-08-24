@@ -503,3 +503,19 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   Typing the same text under each input source gives a direct diff of what the two IMEs send.
   rangeForUserCompletion is traced on purpose -- NSTextView refuses to complete while marked
   text exists, so when it turns into a real range is likely the whole answer.
+- [mail-field-probe] The client trace answers it, and the answer is architectural: Apple 2-Set
+  never calls setMarkedText at all. Its whole trace is insertText with an explicit
+  replacementRange over the previous rendering of the same syllable -- 'ㄱ' at none, then '기'
+  and '김' each replacing 4+1, a repeat '김' to finalise, then 'ㅎ' appended at none. marked is a
+  zero-length range on every single line. Bomi's block above it is the opposite: setMarkedText
+  for every syllable, marked=1+1 throughout.
+- [mail-field-probe] That explains the whole bug without any of the three theories tried.
+  NSTextView refuses to complete while marked text exists, so with Bomi the completion only ever
+  sees the committed prefix '김' and answers 김상태; with Apple every character is already
+  committed text, so the field completes on 김형 like an ordinary typist and finds 김형린.
+- [mail-field-probe] Adopting Apple's protocol deletes the problem rather than patching it:
+  with nothing ever marked, commitComposition has nothing to commit, forcedCommit and its range
+  bookkeeping go away, and the original loose-jamo bug cannot occur either. Cost is that every
+  client must honour replacementRange -- which Apple's own IME already requires of them, but
+  BCT's terminal client answers length()=0 to our probes and is the one to verify first, since a
+  client that ignores the range would append instead of replace and render 'ㄱ기김' garbage.
