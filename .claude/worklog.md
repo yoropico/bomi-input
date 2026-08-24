@@ -519,3 +519,17 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   client must honour replacementRange -- which Apple's own IME already requires of them, but
   BCT's terminal client answers length()=0 to our probes and is the one to verify first, since a
   client that ignores the range would append instead of replace and render 'ㄱ기김' garbage.
+- [mail-field-probe] Switched the composing syllable off marked text entirely, copying the call
+  pattern the trace recorded from Apple 2-Set: every update is insertText carrying an explicit
+  replacementRange over the previous rendering, a repeat write finalises the syllable, and the
+  next syllable's first jamo goes in at noRange so it lands on whatever the client has selected.
+  `rendered` is the only state; setMarkedText is gone from the controller.
+- [mail-field-probe] The change is mostly deletion. flush no longer writes anything (the text is
+  already committed, so it only drops our range), commitComposition has nothing to do, and both
+  historical bugs -- loose jamo from committing, stale completion from marking -- become
+  unreachable rather than handled.
+- [mail-field-probe] rows went 4 -> 6 in tis-runtime-count after this install, which is the Apple
+  2-Set source yoros enabled for the comparison, not a Bomi duplicate: korean=1 roman=1 unchanged.
+- [mail-field-probe] Riskiest untested client is BCT's terminal, which answers length()=0 to the
+  probes; if it ignores replacementRange every keystroke appends and typing renders 'ㄱ기김'.
+  Verify there before anything lands.

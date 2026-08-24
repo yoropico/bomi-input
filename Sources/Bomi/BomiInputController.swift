@@ -17,11 +17,13 @@ final class BomiInputController: IMKInputController {
     private var composer = HangulComposer()
     private var gate = ToggleGate()
 
-    /// Where a forced commit put a syllable we are still composing, in the
-    /// client's coordinates. Non-nil only between `commitComposition` and the
-    /// next write; nil for every app that never forces a commit, which keeps
-    /// those on the plain `noRange` path unchanged.
-    private var forcedCommit: NSRange?
+    /// Where the syllable being composed currently sits in the client, as real
+    /// text. `nil` when nothing of ours is on screen yet.
+    ///
+    /// This IME does not use marked text (see `write`), so there is no preedit for
+    /// the client to track — this range is the only record of what we put there,
+    /// and therefore of what the next keystroke has to overwrite.
+    private var rendered: NSRange?
 
     /// Keys that end/interrupt composition and are handled by the app itself:
     /// Enter(0x24), Return(0x4C), Tab(0x30), Escape(0x35), arrows(0x7B-0x7E), space(0x31).
@@ -60,13 +62,9 @@ final class BomiInputController: IMKInputController {
     }
 
     /// Probe: read back what the CLIENT actually holds, rather than what we
-    /// believe we sent it.
-    ///
-    /// Mail's recipient field picks its completion candidate from the field, and
-    /// the open question behind both known Mail bugs (loose jamo before
-    /// `commitComposition` was ignored, wrong contact after) is whether that match
-    /// counts the marked text or only the committed prefix. Nothing on our side
-    /// can answer that — only the client's own string/selection can.
+    /// believe we sent it. This is how the Mail bug was pinned down — our own log
+    /// records only what we send, so the divergence between the two sides stayed
+    /// invisible until the client answered for itself.
     ///
     /// Every call is synchronous IPC into the client, so it is gated on the debug
     /// switch and costs a shipped session nothing.
@@ -86,65 +84,70 @@ final class BomiInputController: IMKInputController {
                      + "got=\(Self.describe(actual))")
     }
 
-    /// The range the next write must replace, consumed once.
+    /// Put the composing syllable on screen as ordinary, committed text.
     ///
-    /// Normally `noRange`, which lets the client apply its own rule — replace the
-    /// marked range, or the selection when nothing is marked. That rule is what
-    /// swallows Mail's completion remainder, so overriding it is what broke the
-    /// first attempt at this fix; the override exists only for the one case the
-    /// client's rule cannot cover.
+    /// **Why not `setMarkedText`.** Because Apple's own Korean input method does
+    /// not, and that difference was the whole Mail bug. Traced side by side on
+    /// 2026-08-24 with `Scripts/imk-client-trace.swift`, Apple 2-Set typing 김형린
+    /// emits nothing but `insertText`, each call carrying an explicit
+    /// `replacementRange` over the previous rendering of the same syllable — 'ㄱ'
+    /// at none, then '기' and '김' each replacing `4+1` — and marks nothing, ever.
     ///
-    /// That case is the write after a forced commit: the syllable is already in
-    /// the client and nothing is marked, so `noRange` would append a second copy
-    /// instead of growing the first. The recorded range covers the syllable
-    /// alone, and Mail has by then appended its completion and selected the
-    /// remainder (measured: `marked=1+1 sel=1+40`), so union in whatever the
-    /// client currently marks or selects — bounded to ranges that actually touch
-    /// ours, so an unrelated selection elsewhere can never be swallowed.
-    private func takeReplacementRange(_ client: IMKTextInput) -> NSRange {
-        guard let forced = forcedCommit else { return noRange }
-        forcedCommit = nil
-        var range = forced
-        for other in [client.markedRange(), client.selectedRange()]
-        where other.location != NSNotFound
-            && other.location <= NSMaxRange(range)
-            && NSMaxRange(other) >= range.location {
-            range = NSUnionRange(range, other)
+    /// That matters because `NSTextView` refuses to complete while marked text
+    /// exists: `rangeForUserCompletion` returns none. With a marked syllable Mail's
+    /// recipient field could only ever complete on the committed prefix, so typing
+    /// 김형린 it matched '김' and offered 김상태. With every character already
+    /// committed it completes on 김형 like an ordinary typist and finds 김형린.
+    ///
+    /// Writing an empty string deletes the rendering, which is how backspacing to
+    /// nothing clears up after itself.
+    private func write(_ text: String, _ client: IMKTextInput, _ why: String) {
+        let replace = rendered ?? noRange
+        probeClient(client, "before \(why)")
+        DebugLog.log("    \(tag) -> insertText '\(text)' (\(why)) replacing=\(Self.describe(replace))")
+        client.insertText(text, replacementRange: replace)
+
+        if text.isEmpty {
+            rendered = nil
+        } else if let previous = rendered {
+            // Replaced in place: same start, new length.
+            rendered = NSRange(location: previous.location, length: text.utf16.count)
+        } else {
+            // Appended, or dropped onto whatever the client had selected. The
+            // caret now sits just past what we wrote, which is the only way to
+            // learn where it landed.
+            let caret = client.selectedRange()
+            rendered = caret.location == NSNotFound || caret.location < text.utf16.count
+                ? nil
+                : NSRange(location: caret.location - text.utf16.count, length: text.utf16.count)
         }
-        return range
+        probeClient(client, "after \(why)")
     }
 
+    /// Show the syllable currently being composed.
     private func showPreedit(_ client: IMKTextInput) {
         let s = composer.preedit
-        probeClient(client, "before setMarkedText")
-        let replace = takeReplacementRange(client)
-        DebugLog.log("    \(tag) -> setMarkedText '\(s)' replacing=\(Self.describe(replace))")
-        client.setMarkedText(s, selectionRange: NSRange(location: s.utf16.count, length: 0),
-                             replacementRange: replace)
-        probeClient(client, "after setMarkedText")
+        guard !s.isEmpty || rendered != nil else { return }
+        write(s, client, "preedit")
     }
 
+    /// A syllable is finished. Apple rewrites it once more over its own range
+    /// before starting the next one, so do the same and then let the range go: the
+    /// text stays, but it is no longer ours to overwrite.
     private func commit(_ text: String, _ client: IMKTextInput) {
         guard !text.isEmpty else { return }
-        probeClient(client, "before commit")
-        let replace = takeReplacementRange(client)
-        DebugLog.log("    \(tag) -> insertText '\(text)' (commit) replacing=\(Self.describe(replace))")
-        client.insertText(text, replacementRange: replace)
-        probeClient(client, "after commit")
+        write(text, client, "commit")
+        rendered = nil
     }
 
-    /// Flush any in-progress syllable to the client. Used on blur/commit/mode change.
+    /// End composition. Under this protocol the syllable is already real text in
+    /// the client, so nothing is written — only our own state is dropped.
     private func flush(_ client: IMKTextInput) {
         let tail = composer.flush()
         if !tail.isEmpty {
-            probeClient(client, "before flush")
-            let replace = takeReplacementRange(client)
-            DebugLog.log("    \(tag) -> insertText '\(tail)' (flush) replacing=\(Self.describe(replace))")
-            client.insertText(tail, replacementRange: replace)
-            probeClient(client, "after flush")
-        } else {
-            forcedCommit = nil
+            DebugLog.log("    \(tag) flush '\(tail)' already in client, releasing \(Self.describe(rendered ?? noRange))")
         }
+        rendered = nil
     }
 
     /// Han/Eng toggle. Fires on the PRESS of Right-Command — not the release,
@@ -282,7 +285,6 @@ final class BomiInputController: IMKInputController {
     /// roman→korean no). Treat it as a hint that agrees with TIS, never as the
     /// only source; the toggle path and `activateServer` read TIS directly.
     nonisolated override func setValue(_ value: Any!, forTag tag: Int, client sender: Any!) {
-        let boxed = UncheckedSendableBox(value: sender)
         let boxedValue = UncheckedSendableBox(value: value)
         if tag == kTextServiceInputModePropertyTag {
             MainActor.assumeIsolated {
@@ -294,12 +296,9 @@ final class BomiInputController: IMKInputController {
                     // A mode change means the toggle key's key-up went elsewhere.
                     self.gate.reset()
                     // Never carry a half-composed syllable across a language change.
-                    if let client = self.client(boxed.value) {
-                        self.flush(client)
-                    } else {
-                        _ = self.composer.flush()
-                        self.forcedCommit = nil
-                    }
+                    // Nothing is written: the syllable is already committed text.
+                    _ = self.composer.flush()
+                    self.rendered = nil
                 }
             }
         }
@@ -324,48 +323,28 @@ final class BomiInputController: IMKInputController {
             // Trust TIS, not setValue.
             if let active = ModeSwitcher.currentMode() { ModeState.current = active }
             _ = self.composer.flush()
-            // A range captured against a previous focus must never be replayed.
-            self.forcedCommit = nil
+            // A range measured against the previous focus means nothing here.
+            self.rendered = nil
             let app = (self.client(boxed.value)?.bundleIdentifier()) ?? "(nil)"
             DebugLog.log("\(self.tag) activateServer app=\(app) tis=\(ModeSwitcher.currentID()) mode=\(ModeState.current.rawValue)")
         }
     }
 
-    /// A client can ask for a forced commit at any moment, including mid-syllable.
-    /// Apple Mail's recipient field does exactly that while its completion runs,
-    /// and the request is not noise: Mail's contact match is computed from the
-    /// text it received as committed, never from our marked text. Measured
-    /// 2026-08-24 while the request was being ignored — typing 김형, the client
-    /// held `len=41 text='김상태_센터장(영업센터) — stkim1@…' sel=1+40 marked=1+1`,
-    /// a completion built from '김' alone with our '혀' discarded. That is the
-    /// whole reported bug: 김형 typed, 김상태 offered.
+    /// Clients ask for a forced commit mid-composition — Apple Mail's recipient
+    /// field does it while its completion runs. There is nothing left to do here:
+    /// this IME never marks text, so every syllable the client can see is already
+    /// committed and the request is satisfied before it arrives.
     ///
-    /// So commit — but do not end the composition, which is what made the first
-    /// version of this bad. Committing used to clear the composer too, so the
-    /// next jamo opened a new syllable and the field filled with loose jamo
-    /// ('김ㅕㄴ') that matched nobody. Instead the syllable goes to the client and
-    /// stays composable, and the next write replaces where it landed.
-    ///
-    /// `markedRange` is the anchor, not `selectedRange`: mid-completion the
-    /// client reports `sel=none len=0` while the marked range is still right.
+    /// Both bugs this callback used to cause die with it. Committing here ended
+    /// the composition, so the next jamo opened a new syllable and the field filled
+    /// with loose jamo ('김ㅕㄴ'); ignoring it left the last syllable marked, which
+    /// is what kept Mail completing on the prefix alone. Neither state can exist now.
     nonisolated override func commitComposition(_ sender: Any!) {
         let boxed = UncheckedSendableBox(value: sender)
         MainActor.assumeIsolated {
-            guard let client = self.client(boxed.value) else { return }
-            let app = client.bundleIdentifier() ?? "(nil)"
-            let s = self.composer.preedit
-            guard !s.isEmpty else {
-                DebugLog.log("\(self.tag) commitComposition app=\(app) preedit='' nothing to commit")
-                return
-            }
-            let mark = client.markedRange()
-            client.insertText(s, replacementRange: self.forcedCommit ?? self.noRange)
-            self.forcedCommit = mark.location == NSNotFound
-                ? nil
-                : NSRange(location: mark.location, length: s.utf16.count)
-            DebugLog.log("\(self.tag) commitComposition app=\(app) preedit='\(s)' "
-                         + "committed, still composing at \(Self.describe(self.forcedCommit ?? self.noRange))")
-            self.probeClient(client, "after forced commit")
+            let app = (self.client(boxed.value)?.bundleIdentifier()) ?? "(nil)"
+            DebugLog.log("\(self.tag) commitComposition app=\(app) preedit='\(self.composer.preedit)' "
+                         + "already committed, rendered=\(Self.describe(self.rendered ?? self.noRange))")
         }
     }
 
@@ -376,11 +355,8 @@ final class BomiInputController: IMKInputController {
             if let client = self.client(boxed.value) {
                 self.flush(client)
             } else {
-                let tail = self.composer.flush()
-                self.forcedCommit = nil
-                if !tail.isEmpty {
-                    DebugLog.log("\(self.tag) deactivateServer LOST '\(tail)': no IMKTextInput client")
-                }
+                _ = self.composer.flush()
+                self.rendered = nil
             }
             DebugLog.log("\(self.tag) deactivateServer tis=\(ModeSwitcher.currentID()) mode=\(ModeState.current.rawValue)")
         }
