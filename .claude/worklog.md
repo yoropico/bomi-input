@@ -519,3 +519,15 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   client must honour replacementRange -- which Apple's own IME already requires of them, but
   BCT's terminal client answers length()=0 to our probes and is the one to verify first, since a
   client that ignores the range would append instead of replace and render 'ㄱ기김' garbage.
+- [mail-field-probe] Correction to the revert message: BCT does not ignore replacementRange -- we
+  never sent one. Log 17:27:55-57 shows every write as replacing=none, because write() derives the
+  range origin from the client's caret and BCT answers len=0 sel=0+0 to every probe, so the guard
+  (caret.location < text length) blanked `rendered` on each append. The protocol was never
+  exercised there; the range bookkeeping simply had no coordinates to work from.
+- [mail-field-probe] That also means committed-text composition is IMPOSSIBLE, not merely risky,
+  in any client that does not report length/caret: absolute ranges cannot be computed at all. The
+  protocol therefore has to be conditional, and the only open question is how the condition is
+  decided -- a per-app opt-in, or a capability probe on client.length().
+- [mail-field-probe] Capability probing is ambiguous exactly where it matters: an empty NSTextView
+  and BCT both answer length()=0 before the first write, so the mode cannot be chosen up front and
+  switching protocols mid-syllable is where corruption has lived every time so far.
