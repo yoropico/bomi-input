@@ -129,8 +129,18 @@ final class BomiInputController: IMKInputController {
         }
     }
 
-    private func handleKeyEvent(keyCode: UInt16, flags: NSEvent.ModifierFlags,
+    private func handleKeyEvent(keyCode: UInt16, flags rawFlags: NSEvent.ModifierFlags, chars: String,
                                 timestamp: TimeInterval, client: IMKTextInput) -> Bool {
+        // The toggle key is still physically down after its fire: its modifier bit
+        // on this keyDown is typing overlap, not a shortcut. Strip it so the app
+        // never sees Cmd+<letter>. (See ToggleGate.heldModifier.)
+        var flags = rawFlags
+        let heldBit = gate.heldModifier(now: ProcessInfo.processInfo.systemUptime).map { NSEvent.ModifierFlags(rawValue: $0) }
+        if let heldBit, flags.contains(heldBit) {
+            flags.remove(heldBit)
+            DebugLog.log("    \(tag) toggle key still held: stripped 0x\(String(heldBit.rawValue, radix: 16))")
+        }
+
         // Modifiers other than Shift: commit and pass through (e.g. Cmd+C).
         if flags.contains(.command) || flags.contains(.control) || flags.contains(.option) {
             flush(client)
@@ -140,6 +150,12 @@ final class BomiInputController: IMKInputController {
         // Roman mode: we stay active (so Right-Command still reaches us) but type nothing.
         if ModeState.current != .korean {
             flush(client)
+            // Unless we stripped the toggle's bit: passing the event through would
+            // hand the app the original Cmd+key, so type the character ourselves.
+            if flags != rawFlags, !chars.isEmpty {
+                commit(chars, client)
+                return true
+            }
             return false
         }
 
@@ -198,7 +214,7 @@ final class BomiInputController: IMKInputController {
             DebugLog.log("\(self.tag) keyDown keyCode=\(keyCode) chars='\(chars)' "
                          + "flags=0x\(String(flags.rawValue, radix: 16)) mode=\(ModeState.current.rawValue) "
                          + "lat=\(String(format: "%.0f", arrivalMs))ms")
-            return self.handleKeyEvent(keyCode: keyCode, flags: flags, timestamp: timestamp, client: client)
+            return self.handleKeyEvent(keyCode: keyCode, flags: flags, chars: chars, timestamp: timestamp, client: client)
         }
     }
 

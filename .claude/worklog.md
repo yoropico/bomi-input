@@ -436,3 +436,9 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   flushes elsewhere -- deactivateServer, setValue on language change, and the
   modifier/passthrough branches of handleKeyEvent. No unit test: the change is the
   ABSENCE of a call inside an IMKInputController callback, verified on-device instead.
+- [rcmd-shortcut-leak] Log evidence (06:42:03, com.apple.campo): Right-Cmd FIRE, 'b' keyDown with
+  .command 138ms later, key-up 7ms after that -> app got Cmd+B. Typing overlap, not a Bomi
+  routing bug. Fix: ToggleGate remembers the toggle key as "held" from fire until its key-up,
+  any other modifier key, or 500ms (key-up is often lost); handleKeyEvent strips that bit and,
+  in roman mode, types event.characters itself since returning false would pass the original
+  Cmd+key through. Kept in ToggleGate so it is unit-tested; controller diff is minimal.

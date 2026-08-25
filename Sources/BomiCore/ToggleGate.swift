@@ -48,6 +48,14 @@ struct ModifierFlagsTracker {
 public struct ToggleGate {
     private var tracker = ModifierFlagsTracker()
     private var lastFireAt: TimeInterval?
+    /// Set on fire; cleared by the toggle key's key-up, by any other modifier
+    /// key changing, or by `heldWindow` elapsing (the key-up is often lost).
+    private var held: (flag: UInt, since: TimeInterval)?
+
+    /// How long after a fire the toggle key counts as "still held" when no
+    /// key-up ever arrives. A real overlap is ~150ms; longer than that and a
+    /// later Cmd+key is far more likely a deliberate shortcut.
+    public static let heldWindow: TimeInterval = 0.5
 
     /// Duplicate-press window. A human re-tap is far slower (≥150ms).
     public static let duplicateWindow: TimeInterval = 0.08
@@ -78,10 +86,14 @@ public struct ToggleGate {
         let changed = tracker.transition(to: flagsRaw)
 
         guard keyCode == toggleKeyCode, let flag = Self.modifierFlag(forKeyCode: toggleKeyCode) else {
+            held = nil   // another modifier key moved: the user is on a real shortcut
             return .notPress
         }
         // Press == the key's bit went 0 -> 1 in this event.
-        guard (changed & flag) != 0, (flagsRaw & flag) != 0 else { return .notPress }
+        guard (changed & flag) != 0, (flagsRaw & flag) != 0 else {
+            if (flagsRaw & flag) == 0 { held = nil }   // the toggle key's key-up
+            return .notPress
+        }
 
         if let last = lastFireAt, now - last >= 0, now - last < window {
             tracker.reset()   // suppress path MUST reset too, or a missed key-up wedges
@@ -90,7 +102,18 @@ public struct ToggleGate {
 
         lastFireAt = now
         tracker.reset()
+        held = (flag, now)
         return .fire
+    }
+
+    /// The modifier bit the still-held toggle key is contributing to keyDown
+    /// events right now, or nil. A fast typist starts the next letter before
+    /// Right-Command is up (on-device: 'b' 138ms after the fire, key-up 7ms
+    /// later), and the app then receives Cmd+B. That bit belongs to the toggle,
+    /// not to a shortcut, so the caller strips it.
+    public func heldModifier(now: TimeInterval) -> UInt? {
+        guard let held, now - held.since >= 0, now - held.since < Self.heldWindow else { return nil }
+        return held.flag
     }
 
     /// Clear accumulated modifier state. Call on activate/deactivate so a key-up

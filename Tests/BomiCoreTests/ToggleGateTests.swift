@@ -85,3 +85,38 @@ private let shiftFlag: UInt = 0x2_0000
     // Left Control configured as the toggle key.
     #expect(controlGate.flagsChanged(keyCode: 0x3B, flagsRaw: 0x4_0000, toggleKeyCode: 0x3B, now: 0) == .fire)
 }
+
+// A fast typist starts the next letter before Right-Command is released
+// (on-device: 'b' arrived 138ms after the FIRE, key-up 7ms after that), and the
+// app receives Cmd+B. While the toggle key is still held after a fire, the
+// command bit on a keyDown belongs to the toggle, not to a shortcut.
+
+@Test func toggleKeyHeldAfterFireUntilItsKeyUp() {
+    var g = ToggleGate()
+    #expect(g.heldModifier(now: 0) == nil)
+    _ = g.flagsChanged(keyCode: rightCmd, flagsRaw: cmdFlag, toggleKeyCode: rightCmd, now: 0)
+    #expect(g.heldModifier(now: 0.138) == cmdFlag)
+    _ = g.flagsChanged(keyCode: rightCmd, flagsRaw: 0, toggleKeyCode: rightCmd, now: 0.145)
+    #expect(g.heldModifier(now: 0.150) == nil)
+}
+
+@Test func heldStateExpiresWhenKeyUpIsLost() {
+    var g = ToggleGate()
+    _ = g.flagsChanged(keyCode: rightCmd, flagsRaw: cmdFlag, toggleKeyCode: rightCmd, now: 0)
+    #expect(g.heldModifier(now: 0 + ToggleGate.heldWindow + 0.01) == nil)
+}
+
+@Test func leftCommandPressClearsHeldState() {
+    var g = ToggleGate()
+    _ = g.flagsChanged(keyCode: rightCmd, flagsRaw: cmdFlag, toggleKeyCode: rightCmd, now: 0)
+    // key-up lost; the user then reaches for a real Left-Cmd shortcut
+    _ = g.flagsChanged(keyCode: leftCmd, flagsRaw: cmdFlag, toggleKeyCode: rightCmd, now: 0.2)
+    #expect(g.heldModifier(now: 0.21) == nil)
+}
+
+@Test func suppressedDuplicateKeepsHeldState() {
+    var g = ToggleGate()
+    _ = g.flagsChanged(keyCode: rightCmd, flagsRaw: cmdFlag, toggleKeyCode: rightCmd, now: 0)
+    _ = g.flagsChanged(keyCode: rightCmd, flagsRaw: cmdFlag, toggleKeyCode: rightCmd, now: 0.005)
+    #expect(g.heldModifier(now: 0.1) == cmdFlag)
+}
