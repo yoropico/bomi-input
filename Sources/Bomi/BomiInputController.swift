@@ -137,6 +137,16 @@ final class BomiInputController: IMKInputController {
             return false
         }
 
+        // Secure Event Input (sudo / ssh / passwd prompt): macOS only swaps to an
+        // ASCII keyboard *layout* while it is on, and with ABC not enabled there is
+        // none, so it stays on us and the prompt would receive Hangul. Type the
+        // password as ASCII without touching the mode -- no source switch, so
+        // BCT's per-pane input-source pin and per-app memory are never disturbed.
+        if IsSecureEventInputEnabled() {
+            flush(client)
+            return false
+        }
+
         // Roman mode: we stay active (so Right-Command still reaches us) but type nothing.
         if ModeState.current != .korean {
             flush(client)
