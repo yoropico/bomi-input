@@ -11,7 +11,7 @@
   <key>CFBundleShortVersionString</key><string>0.1</string>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
-  <key>LSBackgroundOnly</key><true/>
+  <key>LSUIElement</key><true/>
   <key>NSPrincipalClass</key><string>BomiApplication</string>
   <key>InputMethodConnectionName</key><string>com.bomi.inputmethod.bomi_Connection</string>
   <key>InputMethodServerControllerClass</key><string>BomiInputController</string>
