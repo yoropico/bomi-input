@@ -439,3 +439,143 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
 - [app-default-mode] Per-app default mode is FORCED on every activateServer (yoros chose this over first-entry-only): simplest, no in-process "already applied" set, and it is what pinning Terminal=English means. Switch reuses the toggle path (optimistic ModeState + IMK selectMode), never TIS directly, because TIS-driven switches leave IMK routing stale (see spec).
 - [app-default-mode] Menu items keep target=nil: IMK dispatches the action to the controller with a {kIMKCommandMenuItemName, kIMKCommandClientName} dictionary sender, which is also how we learn WHICH app the user was in.
 - [app-default-mode] activateServer apply is DEFERRED 150ms: macOS restores the app remembered source at +0ms and re-asserts it at +16ms after activateServer, so an immediate selectMode was overwritten every time (log 10:08:36). After the delay we resync from TIS and switch only if still wrong.
+
+- [mail-field-probe] The two Mail bugs are one root cause, not two: commitComposition is the
+  only point where Mail syncs its completion with our composer. Honouring it split the
+  syllable (loose jamo, matched nobody); ignoring it leaves the last syllable marked, and
+  Mail reported 2026-08-24 that it now selects an unrelated contact. Text on screen is
+  correct in the new failure mode, which is why it reads as "slightly odd" rather than broken.
+- [mail-field-probe] Evidence for the second mode, log 09:01:44-50 (typing 최승호): Mail asked
+  for a commit twice with '승' and '호' still marked, both IGNORED, and the user immediately
+  backspaced twice, retyped, pressed Right-Arrow to shake off the completion, then Return.
+- [mail-field-probe] Cannot decide the fix from our own log: it records what we SEND, never
+  what the client holds, so whether Mail matches on the marked text or only the committed
+  prefix is unanswerable from here. Added probeClient() reading back client.length/string/
+  selectedRange/markedRange after every setMarkedText, commit and flush, and at
+  commitComposition itself. Gated on DebugLog.isEnabled because each call is synchronous IPC
+  into the client and must not sit on the keystroke path of a shipped build.
+- [mail-field-probe] The before-write probe answered it in one keystroke. Log 16:35:44.452,
+  right before our setMarkedText '형': len=41 text='김상태_센터장(영업센터) - stkim1@rsautomation.co.kr'
+  sel=1+40 marked=1+1. Mail had already committed its completion into the field with the
+  remainder SELECTED from index 1 to the end, computed from '김' alone -- our marked '혀' was
+  not in the query and Mail overwrote it. That is the reported bug, exactly: 김형 typed, 김상태 offered.
+- [mail-field-probe] So the original reading was right and my retraction after fix #2 was wrong:
+  Mail queries on the text it received as committed. Fix #2's forced commit DID produce the
+  correct candidate (김형태 for 김형) -- that part worked and should be kept.
+- [mail-field-probe] What killed fix #2 was the write that followed, not the commit. Passing an
+  explicit replacementRange bypasses the client's own "replace marked range plus selection"
+  rule, so the completion remainder survived as literal text (len stayed 41). Passing noRange
+  consumes the whole thing: at 16:35:44.453 the same write took the field from 41 chars back to
+  a clean '김형'. The range bookkeeping was the defect, not honouring the request.
+- [mail-field-probe] Fix #3 = fix #2's forced commit kept, but the replacement range is no
+  longer trusted from memory alone. takeReplacementRange unions the recorded range with the
+  client's live markedRange and selectedRange at write time, so Mail's selected completion
+  remainder is swallowed the way a plain keystroke would swallow it. noRange stays the path for
+  every write outside a forced commit, because the client's own rule already does the right
+  thing there -- that was the lesson of fix #2, which overrode it and orphaned the remainder.
+- [mail-field-probe] The union is bounded to ranges that touch ours (other.location <=
+  NSMaxRange(range) && NSMaxRange(other) >= range.location). Without it a selection sitting
+  elsewhere in the document would be merged in and deleted; the completion remainder always
+  abuts, so the bound costs nothing real.
+- [mail-field-probe] Fix #3 partly works and is kept deployed: it is the first build where Mail
+  ever resolves the right person. Log 17:09:45.621, after the forced commit of '린', the client
+  held '김형 (Shawn Kim(김형린) - shawnkim@rsautomation.co.kr) ' -- the correct contact, matched
+  on the full 김형린. The field also stays clean (writes take it back to '김형린'), so none of
+  fix #2's welding of a stranger's address remains.
+- [mail-field-probe] What is still wrong is the INTERMEDIATE candidate. At the '형' stage the
+  forced commit leaves the field committed as '김형', yet Mail answers with
+  '김상태_센터장(영업센터) - stkim1@rsautomation.co.kr' (17:09:43.792 before-probe), a match that
+  contains no 형 at all. Once 린 is committed the same mechanism answers correctly, so Mail is
+  not simply matching our committed text the way three fixes have assumed.
+- [mail-field-probe] Separate defect found in the same log: a passthrough flush on Right-Arrow
+  does not take. 17:09:23.475 wrote '형' over replacing=1+40 and the after-probe shows the field
+  byte-identical at len=41 sel=1+40, while the same write from Space (17:09:36.200) and from a
+  jamo key (17:09:43.792) both collapse it to '김형'. Not the reported bug; do not fold it into
+  the same fix.
+- [mail-field-probe] Three fixes have now failed on the same seam, which per systematic-debugging
+  is the point to stop patching and question the design. The premise every attempt shares is that
+  a marked syllable can coexist with Mail's async completion rewriting the same field -- two
+  writers, no synchronisation. Before attempt #4, measure Apple 2-Set Korean typing 김형린 in the
+  same field: if it also shows 김상태 mid-name, the intermediate candidate is Mail's own behaviour
+  and the remaining work is nothing.
+- [mail-field-probe] Apple 2-Set resolves 김형린 correctly in the same field (yoros, 2026-08-24),
+  so the intermediate wrong candidate is OURS, not Mail's. That kills the "nothing left to do"
+  branch and means our call sequence differs from Apple's somewhere we have never looked.
+- [mail-field-probe] Every fix so far reasoned from our own side of the boundary, which is why
+  three in a row missed. Added Scripts/imk-client-trace.swift: an NSTextView subclass that logs
+  insertText/setMarkedText/unmarkText/rangeForUserCompletion with the field state after each.
+  Typing the same text under each input source gives a direct diff of what the two IMEs send.
+  rangeForUserCompletion is traced on purpose -- NSTextView refuses to complete while marked
+  text exists, so when it turns into a real range is likely the whole answer.
+- [mail-field-probe] The client trace answers it, and the answer is architectural: Apple 2-Set
+  never calls setMarkedText at all. Its whole trace is insertText with an explicit
+  replacementRange over the previous rendering of the same syllable -- 'ㄱ' at none, then '기'
+  and '김' each replacing 4+1, a repeat '김' to finalise, then 'ㅎ' appended at none. marked is a
+  zero-length range on every single line. Bomi's block above it is the opposite: setMarkedText
+  for every syllable, marked=1+1 throughout.
+- [mail-field-probe] That explains the whole bug without any of the three theories tried.
+  NSTextView refuses to complete while marked text exists, so with Bomi the completion only ever
+  sees the committed prefix '김' and answers 김상태; with Apple every character is already
+  committed text, so the field completes on 김형 like an ordinary typist and finds 김형린.
+- [mail-field-probe] Adopting Apple's protocol deletes the problem rather than patching it:
+  with nothing ever marked, commitComposition has nothing to commit, forcedCommit and its range
+  bookkeeping go away, and the original loose-jamo bug cannot occur either. Cost is that every
+  client must honour replacementRange -- which Apple's own IME already requires of them, but
+  BCT's terminal client answers length()=0 to our probes and is the one to verify first, since a
+  client that ignores the range would append instead of replace and render 'ㄱ기김' garbage.
+- [mail-field-probe] Correction to the revert message: BCT does not ignore replacementRange -- we
+  never sent one. Log 17:27:55-57 shows every write as replacing=none, because write() derives the
+  range origin from the client's caret and BCT answers len=0 sel=0+0 to every probe, so the guard
+  (caret.location < text length) blanked `rendered` on each append. The protocol was never
+  exercised there; the range bookkeeping simply had no coordinates to work from.
+- [mail-field-probe] That also means committed-text composition is IMPOSSIBLE, not merely risky,
+  in any client that does not report length/caret: absolute ranges cannot be computed at all. The
+  protocol therefore has to be conditional, and the only open question is how the condition is
+  decided -- a per-app opt-in, or a capability probe on client.length().
+- [mail-field-probe] Capability probing is ambiguous exactly where it matters: an empty NSTextView
+  and BCT both answer length()=0 before the first write, so the mode cannot be chosen up front and
+  switching protocols mid-syllable is where corruption has lived every time so far.
+- [mail-field-probe] Fix #3 turned out to break BCT too, which is why the last word got cut:
+  log 17:30:29 forced-commits '트' and records forcedCommit=0+1, then 17:30:31.561 flushes with
+  replacing=0+1. BCT reports len=0 sel=0+0, so that range is not the syllable we just wrote --
+  it is absolute position 0, the START of the line. Any client that cannot report coordinates
+  gets an explicit range that points at the wrong text.
+- [mail-field-probe] So all three post-main changes regressed a real workflow: fix #2 welded a
+  stranger's address into Mail recipients, fix #3 overwrites line-start text in coordinate-less
+  clients, and the committed-text protocol appended every intermediate jamo there. Restored
+  Sources/Bomi/BomiInputController.swift to 901a707, which is behaviourally identical to main
+  (commitComposition ignored, every write at noRange) and keeps only the gated probes.
+- [mail-field-probe] The rule this cost four attempts to learn: never send an explicit
+  replacementRange to a client that does not report length/caret, because the range means
+  something different to it. Any future fix must establish that capability before using ranges,
+  and the shipped default must stay noRange.
+- [mail-field-probe] Reproducible defect isolated in the SHIPPED behaviour (not a regression from
+  this branch): an ignored commitComposition makes the next flush delete the syllable instead of
+  committing it. Log 19:53, three cases one minute apart.
+  19:53:29.692 commitComposition '호' IGNORED, then 19:53:31.617 flush -> field '최승호' becomes
+  '최승' (len 3 -> 2). Again at 19:53:46.501 / 19:53:47.976, same loss.
+  Control at 19:53:34.609: '호' marked, NO commitComposition arrives, flush at 19:53:36.130 keeps
+  '최승호' (len 3). The only difference between kept and lost is whether commitComposition fired.
+- [mail-field-probe] Reading: after we return from commitComposition having written nothing, the
+  composition is treated as over and the marked text is dropped, so our later insertText at
+  noRange has no marked range to replace and the syllable is discarded rather than committed.
+  The client still reports marked=2+1 while we are inside the callback, so the drop happens after
+  we return -- which is why nothing on our side could see it before.
+- [mail-field-probe] This is what "the last word never completes and vanishes" means, and it dates
+  from PR #13, not from anything on this branch. Candidate fix that stays inside the range
+  constraint: end the composition explicitly in flush (setMarkedText "" then insertText at
+  noRange) instead of relying on insertText to replace a marked range that may already be gone.
+  Not implemented -- four attempts have been reverted, so this one gets agreed before it ships.
+- [mail-field-probe] Implemented the agreed fix: flush now ends the composition explicitly
+  (setMarkedText "" then insertText at noRange) instead of relying on insertText to replace a
+  marked range the client may already have dropped. Scoped to flush alone -- commit was measured
+  working through the same window (17:36:01.705 IGNORED then 17:36:03.394 commit kept '김형'), so
+  it is left untouched; flush is the shared blur/passthrough/mode-change path, so one change
+  covers every caller that loses text.
+- [mail-field-probe] Deliberately coordinate-free. An explicit replacementRange is what made the
+  last four attempts unshippable, since BCT reports len=0 sel=0+0 and writes such a range at
+  position 0; clearing the preedit needs no coordinates at all and so cannot mean something
+  different there.
+- [mail-field-probe] Added a probe between the two calls ("after ending composition") because the
+  intermediate state is the thing to check if this fails: the field should briefly lose the marked
+  syllable and then get it back as committed text, and a client that keeps it would double it.

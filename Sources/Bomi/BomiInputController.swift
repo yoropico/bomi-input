@@ -49,25 +49,78 @@ final class BomiInputController: IMKInputController {
         "c\(UInt(bitPattern: ObjectIdentifier(self).hashValue) % 1000)"
     }
 
+    private static func describe(_ r: NSRange) -> String {
+        r.location == NSNotFound ? "none" : "\(r.location)+\(r.length)"
+    }
+
+    /// Probe: read back what the CLIENT actually holds, rather than what we
+    /// believe we sent it.
+    ///
+    /// Mail's recipient field picks its completion candidate from the field, and
+    /// the open question behind both known Mail bugs (loose jamo before
+    /// `commitComposition` was ignored, wrong contact after) is whether that match
+    /// counts the marked text or only the committed prefix. Nothing on our side
+    /// can answer that — only the client's own string/selection can.
+    ///
+    /// Every call is synchronous IPC into the client, so it is gated on the debug
+    /// switch and costs a shipped session nothing.
+    private func probeClient(_ client: IMKTextInput, _ label: String) {
+        guard DebugLog.isEnabled else { return }
+        let len = client.length()
+        var actual = NSRange(location: NSNotFound, length: 0)
+        let whole: String
+        if len > 0 {
+            whole = client.string(from: NSRange(location: 0, length: len), actualRange: &actual) ?? "(nil)"
+        } else {
+            whole = ""
+        }
+        DebugLog.log("      \(self.tag) CLIENT[\(label)] len=\(len) text='\(whole)' "
+                     + "sel=\(Self.describe(client.selectedRange())) "
+                     + "marked=\(Self.describe(client.markedRange())) "
+                     + "got=\(Self.describe(actual))")
+    }
+
     private func showPreedit(_ client: IMKTextInput) {
         let s = composer.preedit
         DebugLog.log("    \(tag) -> setMarkedText '\(s)'")
         client.setMarkedText(s, selectionRange: NSRange(location: s.utf16.count, length: 0),
                              replacementRange: noRange)
+        probeClient(client, "after setMarkedText")
     }
 
     private func commit(_ text: String, _ client: IMKTextInput) {
         guard !text.isEmpty else { return }
         DebugLog.log("    \(tag) -> insertText '\(text)' (commit)")
         client.insertText(text, replacementRange: noRange)
+        probeClient(client, "after commit")
     }
 
     /// Flush any in-progress syllable to the client. Used on blur/commit/mode change.
+    ///
+    /// The composition is ended **explicitly** first, rather than letting
+    /// `insertText` do it by replacing the marked range. Measured 2026-08-24 in
+    /// Mail's recipient field: after a `commitComposition` we ignored, a flush
+    /// driven by a passthrough key took '최승호' down to '최승' (19:53:29.692 then
+    /// 19:53:31.617, and again at 19:53:46.501/47.976) — the syllable was
+    /// discarded instead of committed. The control case one minute later, same
+    /// keys but with no commit request in between, kept it. By then the client had
+    /// dropped the marked text on its own, so there was no range left for
+    /// `insertText` to replace and the text went nowhere.
+    ///
+    /// Clearing the preedit and then inserting is the same two steps in a fixed
+    /// order, and it needs no coordinates — which matters because an explicit
+    /// `replacementRange` means something else entirely to a client that does not
+    /// report its length or caret (BCT writes it at position 0).
     private func flush(_ client: IMKTextInput) {
         let tail = composer.flush()
         if !tail.isEmpty {
+            DebugLog.log("    \(tag) -> setMarkedText '' (end composition before flush)")
+            client.setMarkedText("", selectionRange: NSRange(location: 0, length: 0),
+                                 replacementRange: noRange)
+            probeClient(client, "after ending composition")
             DebugLog.log("    \(tag) -> insertText '\(tail)' (flush)")
             client.insertText(tail, replacementRange: noRange)
+            probeClient(client, "after flush")
         }
     }
 
@@ -316,11 +369,19 @@ final class BomiInputController: IMKInputController {
     /// still flushes through another path: `deactivateServer` (focus/app change),
     /// `setValue` (language change), and the modifier/passthrough branches of
     /// `handleKeyEvent`.
+    ///
+    /// Ignoring it is NOT free after all — reported 2026-08-24: the field now reads
+    /// correctly but Mail selects an unrelated contact. This is the moment Mail
+    /// syncs its completion with us, so the probe below records what the client
+    /// holds right here; that is what decides whether the match saw the marked
+    /// syllable or only the committed prefix.
     nonisolated override func commitComposition(_ sender: Any!) {
         let boxed = UncheckedSendableBox(value: sender)
         MainActor.assumeIsolated {
-            let app = (self.client(boxed.value)?.bundleIdentifier()) ?? "(nil)"
+            let resolved = self.client(boxed.value)
+            let app = resolved?.bundleIdentifier() ?? "(nil)"
             DebugLog.log("\(self.tag) commitComposition app=\(app) preedit='\(self.composer.preedit)' IGNORED")
+            if let resolved { self.probeClient(resolved, "at commitComposition") }
         }
     }
 
