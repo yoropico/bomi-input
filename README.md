@@ -24,7 +24,8 @@ a human with a logged-in GUI session.
   language memory.
 - Menu-bar input-source menu: current mode indicator and a per-app default
   input ("이 앱의 기본 입력": 한글 / 영어 / 없음) that is forced every time
-  that app gains focus.
+  that app gains focus. "Bomi 설정…" opens a settings window (toggle-key
+  picker + the per-app table) inside the IME process.
 
 ## Requirements
 
@@ -128,9 +129,6 @@ it can be triaged as a real defect rather than silently worked around.
 ## Known follow-ups (out of MVP scope)
 
 - Hanja conversion, symbol layer, Dubeolsik layout, eojeol-keep mode.
-- A real Preferences window (currently the toggle key and per-app-memory
-  flag are `UserDefaults`-backed with sane defaults, but there's no UI to
-  change the toggle key).
 - A per-client marked-text fallback (commit immediately instead of showing
   preedit) for host apps that don't honor `setMarkedText` — not yet
   implemented because it hasn't been confirmed necessary; add it to

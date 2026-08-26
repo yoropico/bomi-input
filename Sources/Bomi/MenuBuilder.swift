@@ -40,9 +40,13 @@ enum MenuBuilder {
         }
         menu.addItem(.separator())
 
-        let toggleInfo = NSMenuItem(title: "한/영 전환 키: 오른쪽 Command", action: nil, keyEquivalent: "")
+        let toggleInfo = NSMenuItem(title: "한/영 전환 키: \(Preferences.toggleKeyName(Preferences.shared.toggleKeyCode))",
+                                    action: nil, keyEquivalent: "")
         toggleInfo.isEnabled = false
         menu.addItem(toggleInfo)
+
+        menu.addItem(NSMenuItem(title: "Bomi 설정…",
+                                action: #selector(BomiInputController.openPreferences(_:)), keyEquivalent: ""))
 
         let about = NSMenuItem(title: "Bomi 정보", action: nil, keyEquivalent: "")
         about.isEnabled = false

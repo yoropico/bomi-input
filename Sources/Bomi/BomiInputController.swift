@@ -338,6 +338,13 @@ final class BomiInputController: IMKInputController {
         }
     }
 
+    @objc nonisolated func openPreferences(_ sender: Any!) {
+        MainActor.assumeIsolated {
+            DebugLog.log("\(self.tag) openPreferences")
+            PreferencesWindow.shared.show()
+        }
+    }
+
     /// Menu action for "이 앱의 기본 입력". IMK invokes it with a dictionary sender:
     /// `kIMKCommandMenuItemName` → the NSMenuItem, `kIMKCommandClientName` → the client.
     @objc nonisolated func setAppDefault(_ sender: Any!) {

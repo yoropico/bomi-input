@@ -579,3 +579,5 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
 - [mail-field-probe] Added a probe between the two calls ("after ending composition") because the
   intermediate state is the thing to check if this fails: the field should briefly lose the marked
   syllable and then get it back as committed text, and a client that keeps it would double it.
+- [prefs-window] Settings window lives IN the IME process (no second app). That forced Info.plist LSBackgroundOnly -> LSUIElement: a background-only process can never bring a window forward. Squirrel/Rime ships LSUIElement the same way. Watch on-device for focus not returning to the previous app after closing the window.
+- [prefs-window] Toggle key is a popup of lone modifier keys, not a key-capture field: the toggle only fires on flagsChanged, so the valid set is small and enumerable.

@@ -72,6 +72,27 @@ private func freshDefaults(_ name: String) -> UserDefaults {
     #expect(p.defaultMode(forApp: "com.apple.Terminal") == nil)
 }
 
+@Test func allDefaultModesListsSortedValidEntries() {
+    let d = freshDefaults("bomi.test.appmode3")
+    let p = Preferences(defaults: d)
+    p.setDefaultMode(.roman, forApp: "com.apple.Terminal")
+    p.setDefaultMode(.korean, forApp: "com.apple.Notes")
+    d.set(["com.apple.Notes": "…korean", "com.apple.Terminal": "…roman", "bad.app": "nonsense"]
+            .mapValues { $0.replacingOccurrences(of: "…", with: "com.bomi.inputmethod.bomi.") },
+          forKey: "defaultModeByApp")
+    let all = p.allDefaultModes()
+    #expect(all.map(\.bundleID) == ["com.apple.Notes", "com.apple.Terminal"])
+    #expect(all.map(\.mode) == [.korean, .roman])
+}
+
+@Test func toggleKeyCodeIsSettable() {
+    let d = freshDefaults("bomi.test.togglekeyset")
+    let p = Preferences(defaults: d)
+    p.setToggleKeyCode(0x3D)
+    #expect(Preferences(defaults: d).toggleKeyCode == 0x3D)
+    #expect(Preferences.toggleKeyName(0x3D) == "오른쪽 Option")
+}
+
 @Test func defaultModeIgnoresGarbageStoredValue() {   // must not trap on a bad stored value
     let d = freshDefaults("bomi.test.appmode2")
     d.set(["com.apple.Terminal": "nonsense"], forKey: "defaultModeByApp")
