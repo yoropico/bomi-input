@@ -22,8 +22,9 @@ a human with a logged-in GUI session.
   host apps (Terminal, Electron).
 - In-IME Han/Eng toggle, default key **Right Command**, with per-app
   language memory.
-- Menu-bar input-source menu: current mode indicator, per-app-memory
-  toggle.
+- Menu-bar input-source menu: current mode indicator and a per-app default
+  input ("이 앱의 기본 입력": 한글 / 영어 / 없음) that is forced every time
+  that app gains focus.
 
 ## Requirements
 
@@ -94,8 +95,11 @@ environment and must be run by a human after `./Scripts/install.sh`:
    switch between them (Cmd-Tab) — expect each app to remember its own
    mode.
 6. **Input-source menu**: click the Bomi item in the menu bar — expect a
-   menu showing the current mode (disabled indicator) and a checkable
-   "앱별 한/영 기억" (per-app memory) item; toggling it should persist.
+   menu showing the current mode (disabled indicator) and an "이 앱의 기본
+   입력" submenu. Pick 영어 while in Terminal and 한글 while in Notes, then
+   Cmd-Tab between them a few times after toggling inside each — expect
+   every focus to snap back to the pinned language; 없음 restores macOS
+   per-app memory.
 7. **Hard apps**: repeat steps 2–4 in **Terminal**, **iTerm2**, a
    **VS Code**/Electron window, and a password field — check for dropped
    or garbled preedit, and composition surviving (or correctly flushing

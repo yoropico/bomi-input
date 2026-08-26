@@ -44,4 +44,26 @@ public final class Preferences: @unchecked Sendable {
               let substitute = Preferences.toggleKeySubstitutions[id] else { return configured }
         return substitute
     }
+
+    /// Per-app default input mode, keyed by bundle id and applied on EVERY
+    /// activation of that app (not just the first): the user pins Terminal to
+    /// English and it stays English no matter what was active before Cmd-Tab.
+    /// Also settable from the shell:
+    /// `defaults write com.bomi.inputmethod.bomi defaultModeByApp -dict-add com.apple.Terminal com.bomi.inputmethod.bomi.roman`
+    private static let defaultModeKey = "defaultModeByApp"
+
+    /// nil = no default for this app; an unparseable stored value also reads as nil
+    /// rather than trapping.
+    public func defaultMode(forApp bundleID: String?) -> InputMode? {
+        guard let bundleID,
+              let raw = d.dictionary(forKey: Preferences.defaultModeKey)?[bundleID] as? String
+        else { return nil }
+        return InputMode(rawValue: raw)
+    }
+
+    public func setDefaultMode(_ mode: InputMode?, forApp bundleID: String) {
+        var map = d.dictionary(forKey: Preferences.defaultModeKey) ?? [:]
+        map[bundleID] = mode?.rawValue
+        d.set(map, forKey: Preferences.defaultModeKey)
+    }
 }

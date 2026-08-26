@@ -436,3 +436,6 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   flushes elsewhere -- deactivateServer, setValue on language change, and the
   modifier/passthrough branches of handleKeyEvent. No unit test: the change is the
   ABSENCE of a call inside an IMKInputController callback, verified on-device instead.
+- [app-default-mode] Per-app default mode is FORCED on every activateServer (yoros chose this over first-entry-only): simplest, no in-process "already applied" set, and it is what pinning Terminal=English means. Switch reuses the toggle path (optimistic ModeState + IMK selectMode), never TIS directly, because TIS-driven switches leave IMK routing stale (see spec).
+- [app-default-mode] Menu items keep target=nil: IMK dispatches the action to the controller with a {kIMKCommandMenuItemName, kIMKCommandClientName} dictionary sender, which is also how we learn WHICH app the user was in.
+- [app-default-mode] activateServer apply is DEFERRED 150ms: macOS restores the app remembered source at +0ms and re-asserts it at +16ms after activateServer, so an immediate selectMode was overwritten every time (log 10:08:36). After the delay we resync from TIS and switch only if still wrong.
