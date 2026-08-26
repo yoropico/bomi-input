@@ -51,3 +51,29 @@ private func freshDefaults(_ name: String) -> UserDefaults {
     let p = Preferences(defaults: d)
     #expect(p.toggleKeyCode(forApp: "com.lemonmojo.RoyalTSX.App") == 0x3C)
 }
+
+// Per-app default input mode: applied on every focus of that app, so the user
+// can pin e.g. Terminal to English and Notes to Korean regardless of what was
+// active before switching.
+
+@Test func defaultModeIsUnsetByDefault() {
+    let p = Preferences(defaults: freshDefaults("bomi.test.appmode0"))
+    #expect(p.defaultMode(forApp: "com.apple.Terminal") == nil)
+    #expect(p.defaultMode(forApp: nil) == nil)
+}
+
+@Test func defaultModeRoundTripsAndClears() {
+    let d = freshDefaults("bomi.test.appmode1")
+    let p = Preferences(defaults: d)
+    p.setDefaultMode(.roman, forApp: "com.apple.Terminal")
+    #expect(p.defaultMode(forApp: "com.apple.Terminal") == .roman)
+    #expect(Preferences(defaults: d).defaultMode(forApp: "com.apple.Terminal") == .roman)   // persisted
+    p.setDefaultMode(nil, forApp: "com.apple.Terminal")
+    #expect(p.defaultMode(forApp: "com.apple.Terminal") == nil)
+}
+
+@Test func defaultModeIgnoresGarbageStoredValue() {   // must not trap on a bad stored value
+    let d = freshDefaults("bomi.test.appmode2")
+    d.set(["com.apple.Terminal": "nonsense"], forKey: "defaultModeByApp")
+    #expect(Preferences(defaults: d).defaultMode(forApp: "com.apple.Terminal") == nil)
+}

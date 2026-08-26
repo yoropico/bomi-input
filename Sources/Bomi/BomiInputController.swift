@@ -300,8 +300,59 @@ final class BomiInputController: IMKInputController {
             // Trust TIS, not setValue.
             if let active = ModeSwitcher.currentMode() { ModeState.current = active }
             _ = self.composer.flush()
-            let app = (self.client(boxed.value)?.bundleIdentifier()) ?? "(nil)"
+            let client = self.client(boxed.value)
+            let app = client?.bundleIdentifier() ?? "(nil)"
             DebugLog.log("\(self.tag) activateServer app=\(app) tis=\(ModeSwitcher.currentID()) mode=\(ModeState.current.rawValue)")
+            if let client, let wanted = Preferences.shared.defaultMode(forApp: client.bundleIdentifier()) {
+                // Not immediately: macOS restores the app's remembered source right
+                // after activateServer and re-asserts it once more ~16ms later
+                // (on-device: setValue korean +0ms, our roman +7ms, korean again
+                // +16ms, then the switch never lands). Wait that dance out, then
+                // check TIS and only switch if macOS left us on the wrong side.
+                let boxedClient = UncheckedSendableBox(value: client)
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(Self.appDefaultDelayMs)) {
+                    MainActor.assumeIsolated {
+                        if let active = ModeSwitcher.currentMode() { ModeState.current = active }
+                        self.apply(wanted, client: boxedClient.value)
+                    }
+                }
+            }
+        }
+    }
+
+    // ponytail: measured 16ms re-assert on this machine; raise if a slower box
+    // still shows "did NOT land" after an app-default APPLY.
+    private static let appDefaultDelayMs = 150
+
+    /// Force `mode` for the focused app. Same optimistic-cache + IMK `selectMode`
+    /// path as the toggle (see `handleToggleFlags` for why not TIS directly).
+    private func apply(_ mode: InputMode, client: IMKTextInput) {
+        guard mode != ModeState.current else { return }
+        ModeState.current = mode
+        let boxedClient = UncheckedSendableBox(value: client)
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                DebugLog.log("  \(self.tag) APPLY app-default=\(mode.rawValue) via=imk-selectMode")
+                ModeSwitcher.selectViaIMK(mode) { id in boxedClient.value.selectMode(id) }
+            }
+        }
+    }
+
+    /// Menu action for "이 앱의 기본 입력". IMK invokes it with a dictionary sender:
+    /// `kIMKCommandMenuItemName` → the NSMenuItem, `kIMKCommandClientName` → the client.
+    @objc nonisolated func setAppDefault(_ sender: Any!) {
+        let boxed = UncheckedSendableBox(value: sender)
+        MainActor.assumeIsolated {
+            let dict = boxed.value as? [String: Any]
+            let item = dict?[kIMKCommandMenuItemName] as? NSMenuItem
+            let client = (dict?[kIMKCommandClientName] as? IMKTextInput) ?? self.client(nil)
+            DebugLog.log("\(self.tag) setAppDefault sender=\(type(of: boxed.value as Any)) "
+                         + "item=\(item?.title ?? "(nil)") tag=\(item?.tag ?? -1) client=\(client == nil ? "nil" : "ok")")
+            guard let bundleID = client?.bundleIdentifier() else { return }
+            let mode = MenuBuilder.mode(forTag: item?.tag ?? MenuBuilder.tagNone)
+            Preferences.shared.setDefaultMode(mode, forApp: bundleID)
+            DebugLog.log("\(self.tag) setAppDefault app=\(bundleID) mode=\(mode?.rawValue ?? "(none)")")
+            if let mode, let client { self.apply(mode, client: client) }
         }
     }
 
@@ -352,7 +403,10 @@ final class BomiInputController: IMKInputController {
 
     nonisolated override func menu() -> NSMenu! {
         let boxed: UncheckedSendableBox<NSMenu> = MainActor.assumeIsolated {
-            UncheckedSendableBox(value: MenuBuilder.build(mode: ModeState.current))
+            let app = self.client(nil)?.bundleIdentifier()
+            let appDefault = Preferences.shared.defaultMode(forApp: app)
+            DebugLog.log("\(self.tag) menu() app=\(app ?? "(nil)") appDefault=\(appDefault?.rawValue ?? "(none)")")
+            return UncheckedSendableBox(value: MenuBuilder.build(mode: ModeState.current, appDefault: appDefault))
         }
         return boxed.value
     }
