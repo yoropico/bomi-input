@@ -97,31 +97,38 @@ final class BomiInputController: IMKInputController {
 
     /// Flush any in-progress syllable to the client. Used on blur/commit/mode change.
     ///
-    /// The composition is ended **explicitly** first, rather than letting
-    /// `insertText` do it by replacing the marked range. Measured 2026-08-24 in
-    /// Mail's recipient field: after a `commitComposition` we ignored, a flush
-    /// driven by a passthrough key took '최승호' down to '최승' (19:53:29.692 then
-    /// 19:53:31.617, and again at 19:53:46.501/47.976) — the syllable was
-    /// discarded instead of committed. The control case one minute later, same
-    /// keys but with no commit request in between, kept it. By then the client had
-    /// dropped the marked text on its own, so there was no range left for
-    /// `insertText` to replace and the text went nowhere.
+    /// Two client families need two opposite flushes, and `markedRange()` is what
+    /// tells them apart:
     ///
-    /// Clearing the preedit and then inserting is the same two steps in a fixed
-    /// order, and it needs no coordinates — which matters because an explicit
-    /// `replacementRange` means something else entirely to a client that does not
-    /// report its length or caret (BCT writes it at position 0).
+    /// - Marked range still present (the normal case): commit by replacing it in
+    ///   ONE `insertText` — the same path every mid-typing commit takes. Ending
+    ///   the composition explicitly first (empty `setMarkedText`, then insert)
+    ///   loses the syllable in Chromium clients: measured 2026-08-28 in Edge
+    ///   Beta, an arrow/space-driven two-step flush left the caret unmoved and
+    ///   the syllable gone (07:24:22/25/28/31), while every one-step mid-typing
+    ///   commit in the same field landed fine.
+    ///
+    /// - Marked range already gone: the client dropped the marked text on its
+    ///   own. Measured 2026-08-24 in Mail's recipient field after a
+    ///   `commitComposition` we ignored: a passthrough-key flush took '최승호'
+    ///   down to '최승' (19:53:29.692/31.617, again at 46.501/47.976) — with no
+    ///   range left to replace, the bare `insertText` went nowhere. Ending the
+    ///   composition explicitly first is what makes the insert land there, and
+    ///   it needs no coordinates — which matters because an explicit
+    ///   `replacementRange` means something else entirely to a client that does
+    ///   not report its length or caret (BCT writes it at position 0).
     private func flush(_ client: IMKTextInput) {
         let tail = composer.flush()
-        if !tail.isEmpty {
+        guard !tail.isEmpty else { return }
+        if client.markedRange().location == NSNotFound {
             DebugLog.log("    \(tag) -> setMarkedText '' (end composition before flush)")
             client.setMarkedText("", selectionRange: NSRange(location: 0, length: 0),
                                  replacementRange: noRange)
             probeClient(client, "after ending composition")
-            DebugLog.log("    \(tag) -> insertText '\(tail)' (flush)")
-            client.insertText(tail, replacementRange: noRange)
-            probeClient(client, "after flush")
         }
+        DebugLog.log("    \(tag) -> insertText '\(tail)' (flush)")
+        client.insertText(tail, replacementRange: noRange)
+        probeClient(client, "after flush")
     }
 
     /// Han/Eng toggle. Fires on the PRESS of Right-Command — not the release,
