@@ -596,3 +596,10 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
 - [prefs-window] Toggle key is a popup of lone modifier keys, not a key-capture field: the toggle only fires on flagsChanged, so the valid set is small and enumerable.
 - [arrow-flush-loss] Root cause of arrow-key syllable loss: cdc595e's unconditional two-step flush (empty setMarkedText, then insertText) breaks Chromium clients -- Edge log 07:24 shows caret unmoved and syllable gone on arrow/space flush, while one-step mid-typing commits land. Fix branches on client.markedRange(): range present = one-step replace-commit (pre-cdc595e path), range gone = keep the two-step that fixed Mail's dropped-marked-text case.
 >>>>>>> origin/main
+- [rcmd-shortcut-leak] "Still happens rarely" diagnosed: the fix WORKED (one on-device
+  strip logged 08-26 09:22, campo) but the installed bundle was replaced 08-28 07:48 by
+  another stream's main-tree install (PRs #14-#18 era) which predates this branch -- the
+  binary since then contains no "toggle key still held" string, and every post-08-28 leak
+  in the durable log matches the unfixed pattern. Not a hole in the held-window logic.
+  Remedy: merged origin/main into the branch (worklog union, controller auto-merged,
+  51 tests pass), reinstalled. Real prevention is landing the PR so main carries the fix.
