@@ -49,26 +49,86 @@ final class BomiInputController: IMKInputController {
         "c\(UInt(bitPattern: ObjectIdentifier(self).hashValue) % 1000)"
     }
 
+    private static func describe(_ r: NSRange) -> String {
+        r.location == NSNotFound ? "none" : "\(r.location)+\(r.length)"
+    }
+
+    /// Probe: read back what the CLIENT actually holds, rather than what we
+    /// believe we sent it.
+    ///
+    /// Mail's recipient field picks its completion candidate from the field, and
+    /// the open question behind both known Mail bugs (loose jamo before
+    /// `commitComposition` was ignored, wrong contact after) is whether that match
+    /// counts the marked text or only the committed prefix. Nothing on our side
+    /// can answer that — only the client's own string/selection can.
+    ///
+    /// Every call is synchronous IPC into the client, so it is gated on the debug
+    /// switch and costs a shipped session nothing.
+    private func probeClient(_ client: IMKTextInput, _ label: String) {
+        guard DebugLog.isEnabled else { return }
+        let len = client.length()
+        var actual = NSRange(location: NSNotFound, length: 0)
+        let whole: String
+        if len > 0 {
+            whole = client.string(from: NSRange(location: 0, length: len), actualRange: &actual) ?? "(nil)"
+        } else {
+            whole = ""
+        }
+        DebugLog.log("      \(self.tag) CLIENT[\(label)] len=\(len) text='\(whole)' "
+                     + "sel=\(Self.describe(client.selectedRange())) "
+                     + "marked=\(Self.describe(client.markedRange())) "
+                     + "got=\(Self.describe(actual))")
+    }
+
     private func showPreedit(_ client: IMKTextInput) {
         let s = composer.preedit
         DebugLog.log("    \(tag) -> setMarkedText '\(s)'")
         client.setMarkedText(s, selectionRange: NSRange(location: s.utf16.count, length: 0),
                              replacementRange: noRange)
+        probeClient(client, "after setMarkedText")
     }
 
     private func commit(_ text: String, _ client: IMKTextInput) {
         guard !text.isEmpty else { return }
         DebugLog.log("    \(tag) -> insertText '\(text)' (commit)")
         client.insertText(text, replacementRange: noRange)
+        probeClient(client, "after commit")
     }
 
     /// Flush any in-progress syllable to the client. Used on blur/commit/mode change.
+    ///
+    /// Two client families need two opposite flushes, and `markedRange()` is what
+    /// tells them apart:
+    ///
+    /// - Marked range still present (the normal case): commit by replacing it in
+    ///   ONE `insertText` — the same path every mid-typing commit takes. Ending
+    ///   the composition explicitly first (empty `setMarkedText`, then insert)
+    ///   loses the syllable in Chromium clients: measured 2026-08-28 in Edge
+    ///   Beta, an arrow/space-driven two-step flush left the caret unmoved and
+    ///   the syllable gone (07:24:22/25/28/31), while every one-step mid-typing
+    ///   commit in the same field landed fine.
+    ///
+    /// - Marked range already gone: the client dropped the marked text on its
+    ///   own. Measured 2026-08-24 in Mail's recipient field after a
+    ///   `commitComposition` we ignored: a passthrough-key flush took '최승호'
+    ///   down to '최승' (19:53:29.692/31.617, again at 46.501/47.976) — with no
+    ///   range left to replace, the bare `insertText` went nowhere. Ending the
+    ///   composition explicitly first is what makes the insert land there, and
+    ///   it needs no coordinates — which matters because an explicit
+    ///   `replacementRange` means something else entirely to a client that does
+    ///   not report its length or caret (BCT writes it at position 0).
     private func flush(_ client: IMKTextInput) {
         let tail = composer.flush()
-        if !tail.isEmpty {
-            DebugLog.log("    \(tag) -> insertText '\(tail)' (flush)")
-            client.insertText(tail, replacementRange: noRange)
+        guard !tail.isEmpty else { return }
+        if client.markedRange().location == NSNotFound {
+            DebugLog.log("    \(tag) -> setMarkedText '' (end composition before flush)")
+            client.setMarkedText("", selectionRange: NSRange(location: 0, length: 0),
+                                 replacementRange: noRange)
+            probeClient(client, "after ending composition")
         }
+        DebugLog.log("    \(tag) -> insertText '\(tail)' (flush)")
+        client.insertText(tail, replacementRange: noRange)
+        probeClient(client, "after flush")
     }
 
     /// Han/Eng toggle. Fires on the PRESS of Right-Command — not the release,
@@ -143,6 +203,16 @@ final class BomiInputController: IMKInputController {
 
         // Modifiers other than Shift: commit and pass through (e.g. Cmd+C).
         if flags.contains(.command) || flags.contains(.control) || flags.contains(.option) {
+            flush(client)
+            return false
+        }
+
+        // Secure Event Input (sudo / ssh / passwd prompt): macOS only swaps to an
+        // ASCII keyboard *layout* while it is on, and with ABC not enabled there is
+        // none, so it stays on us and the prompt would receive Hangul. Type the
+        // password as ASCII without touching the mode -- no source switch, so
+        // BCT's per-pane input-source pin and per-app memory are never disturbed.
+        if IsSecureEventInputEnabled() {
             flush(client)
             return false
         }
@@ -263,8 +333,66 @@ final class BomiInputController: IMKInputController {
             // Trust TIS, not setValue.
             if let active = ModeSwitcher.currentMode() { ModeState.current = active }
             _ = self.composer.flush()
-            let app = (self.client(boxed.value)?.bundleIdentifier()) ?? "(nil)"
+            let client = self.client(boxed.value)
+            let app = client?.bundleIdentifier() ?? "(nil)"
             DebugLog.log("\(self.tag) activateServer app=\(app) tis=\(ModeSwitcher.currentID()) mode=\(ModeState.current.rawValue)")
+            if let client, let wanted = Preferences.shared.defaultMode(forApp: client.bundleIdentifier()) {
+                // Not immediately: macOS restores the app's remembered source right
+                // after activateServer and re-asserts it once more ~16ms later
+                // (on-device: setValue korean +0ms, our roman +7ms, korean again
+                // +16ms, then the switch never lands). Wait that dance out, then
+                // check TIS and only switch if macOS left us on the wrong side.
+                let boxedClient = UncheckedSendableBox(value: client)
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(Self.appDefaultDelayMs)) {
+                    MainActor.assumeIsolated {
+                        if let active = ModeSwitcher.currentMode() { ModeState.current = active }
+                        self.apply(wanted, client: boxedClient.value)
+                    }
+                }
+            }
+        }
+    }
+
+    // ponytail: measured 16ms re-assert on this machine; raise if a slower box
+    // still shows "did NOT land" after an app-default APPLY.
+    private static let appDefaultDelayMs = 150
+
+    /// Force `mode` for the focused app. Same optimistic-cache + IMK `selectMode`
+    /// path as the toggle (see `handleToggleFlags` for why not TIS directly).
+    private func apply(_ mode: InputMode, client: IMKTextInput) {
+        guard mode != ModeState.current else { return }
+        ModeState.current = mode
+        let boxedClient = UncheckedSendableBox(value: client)
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                DebugLog.log("  \(self.tag) APPLY app-default=\(mode.rawValue) via=imk-selectMode")
+                ModeSwitcher.selectViaIMK(mode) { id in boxedClient.value.selectMode(id) }
+            }
+        }
+    }
+
+    @objc nonisolated func openPreferences(_ sender: Any!) {
+        MainActor.assumeIsolated {
+            DebugLog.log("\(self.tag) openPreferences")
+            PreferencesWindow.shared.show()
+        }
+    }
+
+    /// Menu action for "이 앱의 기본 입력". IMK invokes it with a dictionary sender:
+    /// `kIMKCommandMenuItemName` → the NSMenuItem, `kIMKCommandClientName` → the client.
+    @objc nonisolated func setAppDefault(_ sender: Any!) {
+        let boxed = UncheckedSendableBox(value: sender)
+        MainActor.assumeIsolated {
+            let dict = boxed.value as? [String: Any]
+            let item = dict?[kIMKCommandMenuItemName] as? NSMenuItem
+            let client = (dict?[kIMKCommandClientName] as? IMKTextInput) ?? self.client(nil)
+            DebugLog.log("\(self.tag) setAppDefault sender=\(type(of: boxed.value as Any)) "
+                         + "item=\(item?.title ?? "(nil)") tag=\(item?.tag ?? -1) client=\(client == nil ? "nil" : "ok")")
+            guard let bundleID = client?.bundleIdentifier() else { return }
+            let mode = MenuBuilder.mode(forTag: item?.tag ?? MenuBuilder.tagNone)
+            Preferences.shared.setDefaultMode(mode, forApp: bundleID)
+            DebugLog.log("\(self.tag) setAppDefault app=\(bundleID) mode=\(mode?.rawValue ?? "(none)")")
+            if let mode, let client { self.apply(mode, client: client) }
         }
     }
 
@@ -281,11 +409,19 @@ final class BomiInputController: IMKInputController {
     /// still flushes through another path: `deactivateServer` (focus/app change),
     /// `setValue` (language change), and the modifier/passthrough branches of
     /// `handleKeyEvent`.
+    ///
+    /// Ignoring it is NOT free after all — reported 2026-08-24: the field now reads
+    /// correctly but Mail selects an unrelated contact. This is the moment Mail
+    /// syncs its completion with us, so the probe below records what the client
+    /// holds right here; that is what decides whether the match saw the marked
+    /// syllable or only the committed prefix.
     nonisolated override func commitComposition(_ sender: Any!) {
         let boxed = UncheckedSendableBox(value: sender)
         MainActor.assumeIsolated {
-            let app = (self.client(boxed.value)?.bundleIdentifier()) ?? "(nil)"
+            let resolved = self.client(boxed.value)
+            let app = resolved?.bundleIdentifier() ?? "(nil)"
             DebugLog.log("\(self.tag) commitComposition app=\(app) preedit='\(self.composer.preedit)' IGNORED")
+            if let resolved { self.probeClient(resolved, "at commitComposition") }
         }
     }
 
@@ -307,7 +443,10 @@ final class BomiInputController: IMKInputController {
 
     nonisolated override func menu() -> NSMenu! {
         let boxed: UncheckedSendableBox<NSMenu> = MainActor.assumeIsolated {
-            UncheckedSendableBox(value: MenuBuilder.build(mode: ModeState.current))
+            let app = self.client(nil)?.bundleIdentifier()
+            let appDefault = Preferences.shared.defaultMode(forApp: app)
+            DebugLog.log("\(self.tag) menu() app=\(app ?? "(nil)") appDefault=\(appDefault?.rawValue ?? "(none)")")
+            return UncheckedSendableBox(value: MenuBuilder.build(mode: ModeState.current, appDefault: appDefault))
         }
         return boxed.value
     }
