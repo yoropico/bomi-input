@@ -436,6 +436,16 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   flushes elsewhere -- deactivateServer, setValue on language change, and the
   modifier/passthrough branches of handleKeyEvent. No unit test: the change is the
   ABSENCE of a call inside an IMKInputController callback, verified on-device instead.
+<<<<<<< HEAD
+- [rcmd-shortcut-leak] Log evidence (06:42:03, com.apple.campo): Right-Cmd FIRE, 'b' keyDown with
+  .command 138ms later, key-up 7ms after that -> app got Cmd+B. Typing overlap, not a Bomi
+  routing bug. Fix: ToggleGate remembers the toggle key as "held" from fire until its key-up,
+  any other modifier key, or 500ms (key-up is often lost); handleKeyEvent strips that bit and,
+  in roman mode, types event.characters itself since returning false would pass the original
+  Cmd+key through. Kept in ToggleGate so it is unit-tested; controller diff is minimal.
+2026-08-26 09:24 | [session end] reason=other
+2026-09-01 06:41 | [session end] reason=resume
+=======
 - [secure-passthrough] sudo prompts in BCT received Hangul even after BCT started toggling Secure Event Input (bomi-terminal PR #592): macOS swaps to an ASCII keyboard *layout* during secure input and ABC is not in the enabled list (TIS: ABC enabled=0, only bomi.roman is ASCII-capable), so the source stayed on bomi.korean -- reproduced by calling EnableSecureEventInput() directly. Fix on the IME side: handleKeyEvent passes keys through while IsSecureEventInputEnabled(), no mode/source change, so BCT's per-pane source pin and per-app memory stay untouched. Chosen over re-enabling ABC because an OS source swap would be captured by BCT's pin on blur. IMK-layer change: builds + 20 unit tests pass; sudo prompt verified on-device by yoros.
 2026-08-26 12:18 | [push] secure-passthrough @ 06e7714 -- fix(ime): type ASCII while Secure Event Input is on (sudo/ssh password prompts)
 2026-08-26 12:18 | [PR] https://github.com/yoropico/bomi-input/pull/17
@@ -585,3 +595,11 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
 - [prefs-window] Settings window lives IN the IME process (no second app). That forced Info.plist LSBackgroundOnly -> LSUIElement: a background-only process can never bring a window forward. Squirrel/Rime ships LSUIElement the same way. Watch on-device for focus not returning to the previous app after closing the window.
 - [prefs-window] Toggle key is a popup of lone modifier keys, not a key-capture field: the toggle only fires on flagsChanged, so the valid set is small and enumerable.
 - [arrow-flush-loss] Root cause of arrow-key syllable loss: cdc595e's unconditional two-step flush (empty setMarkedText, then insertText) breaks Chromium clients -- Edge log 07:24 shows caret unmoved and syllable gone on arrow/space flush, while one-step mid-typing commits land. Fix branches on client.markedRange(): range present = one-step replace-commit (pre-cdc595e path), range gone = keep the two-step that fixed Mail's dropped-marked-text case.
+>>>>>>> origin/main
+- [rcmd-shortcut-leak] "Still happens rarely" diagnosed: the fix WORKED (one on-device
+  strip logged 08-26 09:22, campo) but the installed bundle was replaced 08-28 07:48 by
+  another stream's main-tree install (PRs #14-#18 era) which predates this branch -- the
+  binary since then contains no "toggle key still held" string, and every post-08-28 leak
+  in the durable log matches the unfixed pattern. Not a hole in the held-window logic.
+  Remedy: merged origin/main into the branch (worklog union, controller auto-merged,
+  51 tests pass), reinstalled. Real prevention is landing the PR so main carries the fix.
