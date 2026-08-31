@@ -442,3 +442,5 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   any other modifier key, or 500ms (key-up is often lost); handleKeyEvent strips that bit and,
   in roman mode, types event.characters itself since returning false would pass the original
   Cmd+key through. Kept in ToggleGate so it is unit-tested; controller diff is minimal.
+2026-08-26 09:24 | [session end] reason=other
+2026-09-01 06:41 | [session end] reason=resume
