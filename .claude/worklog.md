@@ -603,3 +603,16 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   in the durable log matches the unfixed pattern. Not a hole in the held-window logic.
   Remedy: merged origin/main into the branch (worklog union, controller auto-merged,
   51 tests pass), reinstalled. Real prevention is landing the PR so main carries the fix.
+- [blur-commit-double] Root cause of the doubled last syllable: Mail's subject field and Calendar ask
+  for a commit as they lose focus, we ignore it (the recipient field sends the same request
+  mid-syllable), and AppKit then finalises the marked syllable itself before deactivateServer
+  arrives 1-15ms later, so the blur flush appends a second copy ('건건', '미팅팅', '안내내').
+  Six cases in the durable log, under BOTH flush variants -- cdc595e's two-step and 6a37bed's
+  markedRange branch -- so neither the recurrence nor the fix is about the flush shape.
+- [blur-commit-double] Fix reads the field back at deactivateServer, only when a commit request was
+  ignored for this syllable, and skips the write when the client already holds it as committed
+  text (caret at the end, nothing selected: BlurCommit.clientAlreadyHolds). Not a blind skip:
+  BCT's terminal view discards marked text on unmarkText and reports len=0, so it (and Chromium,
+  also len=0) must keep being written to or the syllable is lost. Keystroke-driven flushes are
+  untouched -- the recipient field still holds the syllable as MARKED there (sel=1+1) and needs
+  the insert.

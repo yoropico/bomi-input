@@ -16,6 +16,9 @@ private nonisolated struct UncheckedSendableBox<Value>: @unchecked Sendable {
 final class BomiInputController: IMKInputController {
     private var composer = HangulComposer()
     private var gate = ToggleGate()
+    /// The client asked for a commit (ignored, see `commitComposition`) while
+    /// this syllable was pending. Cleared by the next keystroke or flush.
+    private var commitRequested = false
 
     /// Keys that end/interrupt composition and are handled by the app itself:
     /// Enter(0x24), Return(0x4C), Tab(0x30), Escape(0x35), arrows(0x7B-0x7E), space(0x31).
@@ -119,6 +122,7 @@ final class BomiInputController: IMKInputController {
     ///   not report its length or caret (BCT writes it at position 0).
     private func flush(_ client: IMKTextInput) {
         let tail = composer.flush()
+        commitRequested = false
         guard !tail.isEmpty else { return }
         if client.markedRange().location == NSNotFound {
             DebugLog.log("    \(tag) -> setMarkedText '' (end composition before flush)")
@@ -191,6 +195,8 @@ final class BomiInputController: IMKInputController {
 
     private func handleKeyEvent(keyCode: UInt16, flags rawFlags: NSEvent.ModifierFlags, chars: String,
                                 timestamp: TimeInterval, client: IMKTextInput) -> Bool {
+        // A keystroke means the client did not blur after its commit request.
+        commitRequested = false
         // The toggle key is still physically down after its fire: its modifier bit
         // on this keyDown is typing overlap, not a shortcut. Strip it so the app
         // never sees Cmd+<letter>. (See ToggleGate.heldModifier.)
@@ -421,8 +427,27 @@ final class BomiInputController: IMKInputController {
             let resolved = self.client(boxed.value)
             let app = resolved?.bundleIdentifier() ?? "(nil)"
             DebugLog.log("\(self.tag) commitComposition app=\(app) preedit='\(self.composer.preedit)' IGNORED")
+            self.commitRequested = !self.composer.preedit.isEmpty
             if let resolved { self.probeClient(resolved, "at commitComposition") }
         }
+    }
+
+    /// After a commit request we ignored, an AppKit field finalises the marked
+    /// syllable by itself before it deactivates us (Mail subject, Calendar:
+    /// '건건', '미팅팅', measured with both flush variants). Read the field back
+    /// and skip the write when it already holds the syllable as committed text.
+    /// Clients that report no text (BCT, Chromium) are always written to.
+    private func clientAlreadyHolds(_ tail: String, _ client: IMKTextInput) -> Bool {
+        guard !tail.isEmpty else { return false }
+        let len = client.length()
+        guard len > 0 else { return false }
+        var actual = NSRange(location: NSNotFound, length: 0)
+        let text = client.string(from: NSRange(location: 0, length: len), actualRange: &actual)
+        let sel = client.selectedRange()
+        let holds = BlurCommit.clientAlreadyHolds(tail, text: text, selection: sel)
+        DebugLog.log("\(tag) blur after commit request: len=\(len) text='\(text ?? "(nil)")' "
+                     + "sel=\(Self.describe(sel)) holds '\(tail)'=\(holds)")
+        return holds
     }
 
     nonisolated override func deactivateServer(_ sender: Any!) {
@@ -430,7 +455,13 @@ final class BomiInputController: IMKInputController {
         MainActor.assumeIsolated {
             self.gate.reset()
             if let client = self.client(boxed.value) {
-                self.flush(client)
+                if self.commitRequested, self.clientAlreadyHolds(self.composer.preedit, client) {
+                    let tail = self.composer.flush()
+                    self.commitRequested = false
+                    DebugLog.log("\(self.tag) deactivateServer: '\(tail)' already committed by the client -- not written")
+                } else {
+                    self.flush(client)
+                }
             } else {
                 let tail = self.composer.flush()
                 if !tail.isEmpty {
