@@ -603,3 +603,37 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   in the durable log matches the unfixed pattern. Not a hole in the held-window logic.
   Remedy: merged origin/main into the branch (worklog union, controller auto-merged,
   51 tests pass), reinstalled. Real prevention is landing the PR so main carries the fix.
+- [blur-commit-double] Root cause of the doubled last syllable: Mail's subject field and Calendar ask
+  for a commit as they lose focus, we ignore it (the recipient field sends the same request
+  mid-syllable), and AppKit then finalises the marked syllable itself before deactivateServer
+  arrives 1-15ms later, so the blur flush appends a second copy ('건건', '미팅팅', '안내내').
+  Six cases in the durable log, under BOTH flush variants -- cdc595e's two-step and 6a37bed's
+  markedRange branch -- so neither the recurrence nor the fix is about the flush shape.
+- [blur-commit-double] Fix reads the field back at deactivateServer, only when a commit request was
+  ignored for this syllable, and skips the write when the client already holds it as committed
+  text (caret at the end, nothing selected: BlurCommit.clientAlreadyHolds). Not a blind skip:
+  BCT's terminal view discards marked text on unmarkText and reports len=0, so it (and Chromium,
+  also len=0) must keep being written to or the syllable is lost. Keystroke-driven flushes are
+  untouched -- the recipient field still holds the syllable as MARKED there (sel=1+1) and needs
+  the insert.
+2026-09-02 05:13 | [session end] reason=other
+2026-09-02 05:41 | [session end] reason=resume
+- [blur-commit-double] Edge ("자주 발생") is the same root cause with a second trigger: Chromium confirms
+  the composition in Blink on a mouse click (finishComposingText) or blur (Blink confirms internally,
+  render_widget_host_view_cocoa.mm) and then discards its marked text -- that discard is the
+  commitComposition we ignore. Log: 95 Edge commit requests, 18 followed by a keystroke that
+  re-committed the same syllable ('업업'), 71 by a blur flush. Edge reports len=0, so the text
+  read-back can never judge it; after cancelComposition Chromium's markedRange() answers NSNotFound,
+  while Mail's recipient field (the one client that keeps composing after a request) still reports
+  1+1. So: keystroke/toggle after a request drops the composer when markedRange is NSNotFound; blur
+  after a request skips the write unless the client's text proves the syllable gone.
+- [blur-commit-double] On-device 06:21 (Edge): the blur skip worked, but the keystroke drop never fired --
+  markedRange() still answered 2+1 after the click's commit request, so the next key re-committed
+  'ㅣ'. IMK apparently answers markedRange from its own cache (the reported location never matched
+  the field either: marked=2+1 while sel=114+1). Switched the keystroke/toggle check to
+  selectedRange(), which is live: Chromium returns the renderer's selection = composition range
+  while composing (length>=1 in every probe), caret (length 0) once Blink confirmed; Mail's
+  recipient field keeps the syllable selected (1+1 / 1+40). Every read is now logged
+  ("after commit request: sel=... finalized=...") so the next recurrence shows the values.
+2026-09-02 06:42 | [push] blur-commit-double @ 6e850f5 -- fix(ime): stop doubling the last syllable after a client's commit request (Mail, Calendar, Edge)
+2026-09-02 06:42 | [PR] https://github.com/yoropico/bomi-input/pull/20
