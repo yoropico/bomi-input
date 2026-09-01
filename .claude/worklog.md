@@ -616,3 +616,14 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   also len=0) must keep being written to or the syllable is lost. Keystroke-driven flushes are
   untouched -- the recipient field still holds the syllable as MARKED there (sel=1+1) and needs
   the insert.
+2026-09-02 05:13 | [session end] reason=other
+2026-09-02 05:41 | [session end] reason=resume
+- [blur-commit-double] Edge ("자주 발생") is the same root cause with a second trigger: Chromium confirms
+  the composition in Blink on a mouse click (finishComposingText) or blur (Blink confirms internally,
+  render_widget_host_view_cocoa.mm) and then discards its marked text -- that discard is the
+  commitComposition we ignore. Log: 95 Edge commit requests, 18 followed by a keystroke that
+  re-committed the same syllable ('업업'), 71 by a blur flush. Edge reports len=0, so the text
+  read-back can never judge it; after cancelComposition Chromium's markedRange() answers NSNotFound,
+  while Mail's recipient field (the one client that keeps composing after a request) still reports
+  1+1. So: keystroke/toggle after a request drops the composer when markedRange is NSNotFound; blur
+  after a request skips the write unless the client's text proves the syllable gone.

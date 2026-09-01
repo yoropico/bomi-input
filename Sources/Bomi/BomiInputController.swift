@@ -162,6 +162,7 @@ final class BomiInputController: IMKInputController {
             // every FIRE then lost its key-up, where before only ~1 in 12 did.)
             return true
         case .fire:
+            dropIfClientFinalized(client)
             flush(client)
             let target = ModeState.current.other
             // Optimistic. `selectMode` is asynchronous, and the next keystroke can beat
@@ -195,8 +196,7 @@ final class BomiInputController: IMKInputController {
 
     private func handleKeyEvent(keyCode: UInt16, flags rawFlags: NSEvent.ModifierFlags, chars: String,
                                 timestamp: TimeInterval, client: IMKTextInput) -> Bool {
-        // A keystroke means the client did not blur after its commit request.
-        commitRequested = false
+        dropIfClientFinalized(client)
         // The toggle key is still physically down after its fire: its modifier bit
         // on this keyDown is typing overlap, not a shortcut. Strip it so the app
         // never sees Cmd+<letter>. (See ToggleGate.heldModifier.)
@@ -339,6 +339,7 @@ final class BomiInputController: IMKInputController {
             // Trust TIS, not setValue.
             if let active = ModeSwitcher.currentMode() { ModeState.current = active }
             _ = self.composer.flush()
+            self.commitRequested = false
             let client = self.client(boxed.value)
             let app = client?.bundleIdentifier() ?? "(nil)"
             DebugLog.log("\(self.tag) activateServer app=\(app) tis=\(ModeSwitcher.currentID()) mode=\(ModeState.current.rawValue)")
@@ -432,22 +433,37 @@ final class BomiInputController: IMKInputController {
         }
     }
 
-    /// After a commit request we ignored, an AppKit field finalises the marked
-    /// syllable by itself before it deactivates us (Mail subject, Calendar:
-    /// '건건', '미팅팅', measured with both flush variants). Read the field back
-    /// and skip the write when it already holds the syllable as committed text.
-    /// Clients that report no text (BCT, Chromium) are always written to.
-    private func clientAlreadyHolds(_ tail: String, _ client: IMKTextInput) -> Bool {
-        guard !tail.isEmpty else { return false }
+    /// Blur after a commit request we ignored: the client has finalised the
+    /// marked syllable by itself (AppKit unmarks and keeps it: Mail subject,
+    /// Calendar '건건'/'미팅팅'; Chromium confirms it in Blink on blur and reports
+    /// no text; BCT's terminal force-wrote it to the PTY before asking). Writing
+    /// it again doubles it, so the write is skipped unless a client that reports
+    /// its text shows the syllable gone (Mail's recipient field drops it).
+    private func blurMustWrite(_ tail: String, _ client: IMKTextInput) -> Bool {
         let len = client.length()
-        guard len > 0 else { return false }
-        var actual = NSRange(location: NSNotFound, length: 0)
-        let text = client.string(from: NSRange(location: 0, length: len), actualRange: &actual)
-        let sel = client.selectedRange()
-        let holds = BlurCommit.clientAlreadyHolds(tail, text: text, selection: sel)
+        var text: String?
+        if len > 0 {
+            var actual = NSRange(location: NSNotFound, length: 0)
+            text = client.string(from: NSRange(location: 0, length: len), actualRange: &actual)
+        }
+        let write = BlurCommit.mustWrite(tail, text: text)
         DebugLog.log("\(tag) blur after commit request: len=\(len) text='\(text ?? "(nil)")' "
-                     + "sel=\(Self.describe(sel)) holds '\(tail)'=\(holds)")
-        return holds
+                     + "write '\(tail)'=\(write)")
+        return write
+    }
+
+    /// Keystroke or toggle after a commit request we ignored. Chromium has
+    /// confirmed the syllable in Blink (mouse click → finishComposingText) and
+    /// discarded its marked text, so `markedRange()` answers NSNotFound: the
+    /// composer must forget the syllable or the next key commits it a second
+    /// time ('업업', Edge 09:40:31). Mail's recipient field, the client that
+    /// keeps composing after such a request, still reports the range (1+1).
+    private func dropIfClientFinalized(_ client: IMKTextInput) {
+        guard commitRequested else { return }
+        commitRequested = false
+        guard !composer.preedit.isEmpty, client.markedRange().location == NSNotFound else { return }
+        let tail = composer.flush()
+        DebugLog.log("\(tag) client finalized '\(tail)' after its commit request (no marked range) -- dropped")
     }
 
     nonisolated override func deactivateServer(_ sender: Any!) {
@@ -455,7 +471,8 @@ final class BomiInputController: IMKInputController {
         MainActor.assumeIsolated {
             self.gate.reset()
             if let client = self.client(boxed.value) {
-                if self.commitRequested, self.clientAlreadyHolds(self.composer.preedit, client) {
+                if self.commitRequested, !self.composer.preedit.isEmpty,
+                   !self.blurMustWrite(self.composer.preedit, client) {
                     let tail = self.composer.flush()
                     self.commitRequested = false
                     DebugLog.log("\(self.tag) deactivateServer: '\(tail)' already committed by the client -- not written")
