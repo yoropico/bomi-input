@@ -454,16 +454,27 @@ final class BomiInputController: IMKInputController {
 
     /// Keystroke or toggle after a commit request we ignored. Chromium has
     /// confirmed the syllable in Blink (mouse click → finishComposingText) and
-    /// discarded its marked text, so `markedRange()` answers NSNotFound: the
-    /// composer must forget the syllable or the next key commits it a second
-    /// time ('업업', Edge 09:40:31). Mail's recipient field, the client that
-    /// keeps composing after such a request, still reports the range (1+1).
+    /// discarded its marked text; the composer must forget the syllable or the
+    /// next key commits it a second time ('업업', Edge 09:40:31).
+    ///
+    /// `markedRange()` cannot tell: Edge kept answering 2+1 after such a request
+    /// (06:21:53, still doubled). `selectedRange()` is live — Chromium returns the
+    /// renderer's selection, which is the composition range while composing
+    /// (length ≥ 1 in every probe) and a caret once Blink has confirmed it.
+    /// Mail's recipient field, the client that keeps composing after such a
+    /// request, also keeps the syllable selected (1+1, 1+40 under completion).
     private func dropIfClientFinalized(_ client: IMKTextInput) {
         guard commitRequested else { return }
         commitRequested = false
-        guard !composer.preedit.isEmpty, client.markedRange().location == NSNotFound else { return }
+        guard !composer.preedit.isEmpty else { return }
+        let sel = client.selectedRange()
+        let marked = client.markedRange()
+        let finalized = sel.location == NSNotFound || sel.length == 0
+        DebugLog.log("\(tag) after commit request: sel=\(Self.describe(sel)) marked=\(Self.describe(marked)) "
+                     + "preedit='\(composer.preedit)' finalized=\(finalized)")
+        guard finalized else { return }
         let tail = composer.flush()
-        DebugLog.log("\(tag) client finalized '\(tail)' after its commit request (no marked range) -- dropped")
+        DebugLog.log("\(tag) client finalized '\(tail)' after its commit request -- dropped")
     }
 
     nonisolated override func deactivateServer(_ sender: Any!) {

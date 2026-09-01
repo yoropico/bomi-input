@@ -627,3 +627,11 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   while Mail's recipient field (the one client that keeps composing after a request) still reports
   1+1. So: keystroke/toggle after a request drops the composer when markedRange is NSNotFound; blur
   after a request skips the write unless the client's text proves the syllable gone.
+- [blur-commit-double] On-device 06:21 (Edge): the blur skip worked, but the keystroke drop never fired --
+  markedRange() still answered 2+1 after the click's commit request, so the next key re-committed
+  'ㅣ'. IMK apparently answers markedRange from its own cache (the reported location never matched
+  the field either: marked=2+1 while sel=114+1). Switched the keystroke/toggle check to
+  selectedRange(), which is live: Chromium returns the renderer's selection = composition range
+  while composing (length>=1 in every probe), caret (length 0) once Blink confirmed; Mail's
+  recipient field keeps the syllable selected (1+1 / 1+40). Every read is now logged
+  ("after commit request: sel=... finalized=...") so the next recurrence shows the values.
