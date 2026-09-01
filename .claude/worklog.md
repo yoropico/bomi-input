@@ -635,3 +635,5 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   while composing (length>=1 in every probe), caret (length 0) once Blink confirmed; Mail's
   recipient field keeps the syllable selected (1+1 / 1+40). Every read is now logged
   ("after commit request: sel=... finalized=...") so the next recurrence shows the values.
+2026-09-02 06:42 | [push] blur-commit-double @ 6e850f5 -- fix(ime): stop doubling the last syllable after a client's commit request (Mail, Calendar, Edge)
+2026-09-02 06:42 | [PR] https://github.com/yoropico/bomi-input/pull/20
