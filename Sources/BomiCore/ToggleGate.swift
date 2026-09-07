@@ -106,6 +106,35 @@ public struct ToggleGate {
         return .fire
     }
 
+    /// Process one `keyDown` of a NON-modifier toggle key (F18 by default -- see
+    /// `Preferences.keyDownToggleKeyCode`).
+    ///
+    /// Why a plain key at all: a modifier toggle is structurally leaky. From the
+    /// press until the physical release (~100ms) every other key carries Cmd, and
+    /// whether that combination is a shortcut is decided BEFORE the IME sees it --
+    /// by system hotkeys and by the app's menu key equivalents (on-device: BCT's
+    /// ⌘1-8 tab switch never reached us once, 2026-09-07). Nothing inside an IME
+    /// can strip a bit from an event it is never handed. Rewriting Right-Command
+    /// into F18 at the HID layer (Karabiner) removes the modifier from the
+    /// timeline altogether; this is the receiving end.
+    ///
+    /// - Parameters:
+    ///   - isRepeat: `NSEvent.isARepeat` -- a held toggle key must not autorepeat
+    ///     the toggle.
+    public mutating func keyDown(keyCode: UInt16, toggleKeyCode: UInt16, isRepeat: Bool,
+                                 now: TimeInterval,
+                                 window: TimeInterval = ToggleGate.duplicateWindow) -> ToggleOutcome {
+        guard keyCode == toggleKeyCode, Self.modifierFlag(forKeyCode: toggleKeyCode) == nil else {
+            return .notPress
+        }
+        if isRepeat { return .suppressed }
+        if let last = lastFireAt, now - last >= 0, now - last < window { return .suppressed }
+        lastFireAt = now
+        tracker.reset()
+        held = nil   // a plain key adds no modifier bit to whatever overlaps it
+        return .fire
+    }
+
     /// The modifier bit the still-held toggle key is contributing to keyDown
     /// events right now, or nil. A fast typist starts the next letter before
     /// Right-Command is up (on-device: 'b' 138ms after the fire, key-up 7ms

@@ -8,7 +8,7 @@ Bomi is a native macOS input method (IME) implementing the **Sebeolsik-final (ì„
 
 - Bundle id: `com.bomi.inputmethod.bomi`; IMK connection name: `com.bomi.inputmethod.bomi_Connection`.
 - Two input modes declared in `Resources/Info.plist`: `com.bomi.inputmethod.bomi.korean` (default) and `com.bomi.inputmethod.bomi.roman`. Han/Eng switching is done by switching the active input mode (macOS/TIS owns the truth), not by an internal boolean.
-- Toggle key defaults to Right Command (kVK_RightCommand, 0x36), fires on **press**, with an 80 ms duplicate-press debounce (the source switch and Chromium apps emit double press events).
+- Toggle key defaults to Right Command (kVK_RightCommand, 0x36), fires on **press**, with an 80 ms duplicate-press debounce (the source switch and Chromium apps emit double press events). A modifier toggle leaks shortcuts, though: keys pressed in the ~100 ms before Right-Command is physically released arrive as Cmd+key, and system hotkeys and app menus consume those before the IME is consulted. So on this machine Karabiner rewrites Right-Command into **F18**, and Bomi also toggles on the F18 `keyDown` (`Preferences.keyDownToggleKeyCode`, `ToggleGate.keyDown`); the modifier toggle stays as the fallback for when Karabiner is not running.
 - Composition strategy: per-syllable immediate commit (not eojeol-keep), chosen for robustness in Terminal/Electron hosts.
 - Requirements: macOS 14+, Swift 6.2+ toolchain (developed against Swift 6.3.3). SwiftPM-only â€” no Xcode project, no external dependencies.
 

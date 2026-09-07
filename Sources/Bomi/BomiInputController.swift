@@ -181,35 +181,55 @@ final class BomiInputController: IMKInputController {
             // every FIRE then lost its key-up, where before only ~1 in 12 did.)
             return true
         case .fire:
-            dropIfClientFinalized(client)
-            flush(client)
-            let target = ModeState.current.other
-            // Optimistic. `selectMode` is asynchronous, and the next keystroke can beat
-            // the switch; it must already be treated as the new language. The real state
-            // is re-read from TIS in `activateServer` and reported by `setValue`.
-            // The cache is process-wide, so a toggle fired in this client is already
-            // visible to every other app's controller.
-            ModeState.current = target
-
-            // Ask IMK to switch, rather than swapping the input source behind its back.
-            //
-            // `TISSelectInputSource` (used here before) changes the active source without
-            // IMK's knowledge, and IMK's event routing is then left stale: this controller
-            // keeps getting `keyDown` but never another `flagsChanged`, so the next
-            // Right-Cmd is simply lost and only refocusing the app (activateServer) repairs
-            // it. Measured on-device: EVERY TIS toggle lost its key-up; what made it look
-            // intermittent was that switching apps kept silently repairing it.
-            //
-            // Still deferred out of this callback: mutating the input state while IMK is
-            // mid-dispatch of the event it just handed us is not something to rely on.
-            let boxedClient = UncheckedSendableBox(value: client)
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    DebugLog.log("  \(self.tag) FIRE target=\(target.rawValue) via=imk-selectMode")
-                    ModeSwitcher.selectViaIMK(target) { id in boxedClient.value.selectMode(id) }
-                }
-            }
+            fireToggle(client)
             return true
+        }
+    }
+
+    /// The same toggle, from a `keyDown` of the non-modifier toggle key (F18 --
+    /// see `Preferences.keyDownToggleKeyCode` for why it exists). Returns whether
+    /// the event was consumed.
+    private func handleToggleKeyDown(keyCode: UInt16, isRepeat: Bool, client: IMKTextInput) -> Bool {
+        guard let toggleKey = Preferences.shared.keyDownToggleKeyCode else { return false }
+        let outcome = gate.keyDown(keyCode: keyCode, toggleKeyCode: toggleKey, isRepeat: isRepeat,
+                                   now: ProcessInfo.processInfo.systemUptime)
+        guard outcome != .notPress else { return false }
+        DebugLog.log("\(tag) keyDown toggle app=\(client.bundleIdentifier() ?? "(nil)") keyCode=\(keyCode) "
+                     + "outcome=\(outcome) mode=\(ModeState.current.rawValue) tis=\(ModeSwitcher.currentID())")
+        if outcome == .fire { fireToggle(client) }
+        return true   // suppressed (autorepeat / duplicate) is consumed too
+    }
+
+    /// Switch to the other mode. Shared by the modifier (`flagsChanged`) and the
+    /// plain-key (`keyDown`) toggles.
+    private func fireToggle(_ client: IMKTextInput) {
+        dropIfClientFinalized(client)
+        flush(client)
+        let target = ModeState.current.other
+        // Optimistic. `selectMode` is asynchronous, and the next keystroke can beat
+        // the switch; it must already be treated as the new language. The real state
+        // is re-read from TIS in `activateServer` and reported by `setValue`.
+        // The cache is process-wide, so a toggle fired in this client is already
+        // visible to every other app's controller.
+        ModeState.current = target
+
+        // Ask IMK to switch, rather than swapping the input source behind its back.
+        //
+        // `TISSelectInputSource` (used here before) changes the active source without
+        // IMK's knowledge, and IMK's event routing is then left stale: this controller
+        // keeps getting `keyDown` but never another `flagsChanged`, so the next
+        // Right-Cmd is simply lost and only refocusing the app (activateServer) repairs
+        // it. Measured on-device: EVERY TIS toggle lost its key-up; what made it look
+        // intermittent was that switching apps kept silently repairing it.
+        //
+        // Still deferred out of this callback: mutating the input state while IMK is
+        // mid-dispatch of the event it just handed us is not something to rely on.
+        let boxedClient = UncheckedSendableBox(value: client)
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                DebugLog.log("  \(self.tag) FIRE target=\(target.rawValue) via=imk-selectMode")
+                ModeSwitcher.selectViaIMK(target) { id in boxedClient.value.selectMode(id) }
+            }
         }
     }
 
@@ -308,6 +328,7 @@ final class BomiInputController: IMKInputController {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let chars = event.characters ?? ""
         let timestamp = event.timestamp
+        let isRepeat = event.isARepeat
         // Press→IME arrival latency. NSEvent.timestamp and systemUptime share a
         // clock, so this exposes upstream (app event queue / WindowServer) delay
         // that per-key cadence alone cannot show. Field consumed by
@@ -315,6 +336,7 @@ final class BomiInputController: IMKInputController {
         let arrivalMs = (ProcessInfo.processInfo.systemUptime - timestamp) * 1000
         return MainActor.assumeIsolated {
             guard let client = boxed.value as? IMKTextInput else { return false }
+            if self.handleToggleKeyDown(keyCode: keyCode, isRepeat: isRepeat, client: client) { return true }
             DebugLog.log("\(self.tag) keyDown keyCode=\(keyCode) chars='\(chars)' "
                          + "flags=0x\(String(flags.rawValue, radix: 16)) mode=\(ModeState.current.rawValue) "
                          + "lat=\(String(format: "%.0f", arrivalMs))ms")

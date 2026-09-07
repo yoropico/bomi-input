@@ -23,9 +23,29 @@ public final class Preferences: @unchecked Sendable {
 
     /// `defaults` is injectable so tests can run against an isolated suite
     /// instead of the process-wide standard store.
+    /// F18 (kVK_F18). A second, NON-modifier toggle that fires on `keyDown`, in
+    /// addition to the modifier toggle above.
+    ///
+    /// Right-Command as a toggle leaks shortcuts: every key pressed in the ~100ms
+    /// before it is physically released arrives as Cmd+key, and system hotkeys and
+    /// app menus consume those before the IME is consulted (BCT's ⌘1-8 tab switch
+    /// on-device, 2026-09-07). The cure is upstream of us: Karabiner rewrites
+    /// Right-Command into F18, so no Cmd ever exists to overlap, and Bomi toggles on
+    /// the F18 press. The modifier toggle stays enabled so the key keeps working
+    /// (with the old overlap behaviour) whenever Karabiner is not running.
+    /// `0` disables: `defaults write com.bomi.inputmethod.bomi keyDownToggleKeyCode 0`.
+    public static let defaultKeyDownToggleKeyCode: UInt16 = 0x4F
+
     public init(defaults: UserDefaults = .standard) {
         self.d = defaults
-        d.register(defaults: ["toggleKeyCode": Int(Preferences.defaultToggleKeyCode)])
+        d.register(defaults: ["toggleKeyCode": Int(Preferences.defaultToggleKeyCode),
+                              "keyDownToggleKeyCode": Int(Preferences.defaultKeyDownToggleKeyCode)])
+    }
+
+    /// nil when disabled (stored 0) or out of range.
+    public var keyDownToggleKeyCode: UInt16? {
+        guard let code = UInt16(exactly: d.integer(forKey: "keyDownToggleKeyCode")), code != 0 else { return nil }
+        return code
     }
 
     /// `UInt16(exactly:)` (not the trapping `UInt16(_:)`) so an out-of-range

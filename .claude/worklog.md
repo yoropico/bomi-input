@@ -649,3 +649,12 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   -> setMarkedText now + insertText on the next runloop turn (markThenCommit; commit path shared with flush as
   commitMarked); anything else -> swallowed. Nothing stripped ever returns false again. Not verified on-device yet:
   needs a toggle+fast letter in Edge (expect the letter, no select-all/reload) and in BCT.
+- [held-strip-chromium] Second half of the same complaint (11:13-11:14): the key after a toggle in BCT never
+  reached Bomi at all -- BCT's SwiftUI menu takes ⌘1-8 (tab switch) in the key-equivalent pass before the IME,
+  and the durable log has zero plain Cmd+digit keyDowns from BCT ever. A modifier toggle is structurally leaky:
+  ~100ms of Cmd overlap decided upstream of us. Decision (yoros: right Cmd is the 한/영 key everywhere):
+  Karabiner rewrites right_command -> f18 (rule appended LAST so the frontmost-app RDP rules keep winning;
+  backup karabiner.json.bak-20260907-112724), and Bomi gains a non-modifier keyDown toggle
+  (Preferences.keyDownToggleKeyCode default 0x4F, ToggleGate.keyDown with autorepeat+duplicate suppression,
+  fireToggle shared with the flagsChanged path). Modifier toggle kept as the fallback when Karabiner is down.
+  Verified on-device 11:27:32/34: keyCode=79 fires, typing after it carries no Cmd.
