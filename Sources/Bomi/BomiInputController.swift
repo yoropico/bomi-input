@@ -124,15 +124,34 @@ final class BomiInputController: IMKInputController {
         let tail = composer.flush()
         commitRequested = false
         guard !tail.isEmpty else { return }
+        commitMarked(tail, client, label: "flush")
+    }
+
+    /// Commit text that is (or was) the client's marked text -- see `flush`.
+    private func commitMarked(_ text: String, _ client: IMKTextInput, label: String) {
         if client.markedRange().location == NSNotFound {
-            DebugLog.log("    \(tag) -> setMarkedText '' (end composition before flush)")
+            DebugLog.log("    \(tag) -> setMarkedText '' (end composition before \(label))")
             client.setMarkedText("", selectionRange: NSRange(location: 0, length: 0),
                                  replacementRange: noRange)
             probeClient(client, "after ending composition")
         }
-        DebugLog.log("    \(tag) -> insertText '\(tail)' (flush)")
-        client.insertText(tail, replacementRange: noRange)
-        probeClient(client, "after flush")
+        DebugLog.log("    \(tag) -> insertText '\(text)' (\(label))")
+        client.insertText(text, replacementRange: noRange)
+        probeClient(client, "after \(label)")
+    }
+
+    /// Type a key that overlapped the toggle: mark it now, commit it on the next
+    /// runloop turn. The gap is what keeps Chromium from also running the key as
+    /// a shortcut -- see `HeldKeyPolicy`.
+    private func markThenCommit(_ text: String, _ client: IMKTextInput) {
+        DebugLog.log("    \(tag) -> setMarkedText '\(text)' (held key)")
+        client.setMarkedText(text, selectionRange: NSRange(location: text.utf16.count, length: 0),
+                             replacementRange: noRange)
+        probeClient(client, "after setMarkedText")
+        let boxed = UncheckedSendableBox(value: client)
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { self.commitMarked(text, boxed.value, label: "held key") }
+        }
     }
 
     /// Han/Eng toggle. Fires on the PRESS of Right-Command — not the release,
@@ -205,6 +224,21 @@ final class BomiInputController: IMKInputController {
         if let heldBit, flags.contains(heldBit) {
             flags.remove(heldBit)
             DebugLog.log("    \(tag) toggle key still held: stripped 0x\(String(heldBit.rawValue, radix: 16))")
+            // From here on this event must not reach the app as the original
+            // Cmd+key: every `return false` below would pass exactly that through.
+            let composable = keyCode != 0x33 && !Self.passthroughKeys.contains(keyCode)
+                && KeyTranslator.ascii(keyCode: keyCode, shift: flags.contains(.shift)) != nil
+            switch HeldKeyPolicy.action(korean: ModeState.current == .korean, composable: composable, chars: chars) {
+            case .compose:
+                break
+            case .markThenCommit(let text):
+                flush(client)
+                markThenCommit(text, client)
+                return true
+            case .swallow:
+                flush(client)
+                return true
+            }
         }
 
         // Modifiers other than Shift: commit and pass through (e.g. Cmd+C).
@@ -226,12 +260,6 @@ final class BomiInputController: IMKInputController {
         // Roman mode: we stay active (so Right-Command still reaches us) but type nothing.
         if ModeState.current != .korean {
             flush(client)
-            // Unless we stripped the toggle's bit: passing the event through would
-            // hand the app the original Cmd+key, so type the character ourselves.
-            if flags != rawFlags, !chars.isEmpty {
-                commit(chars, client)
-                return true
-            }
             return false
         }
 

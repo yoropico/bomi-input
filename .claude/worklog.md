@@ -637,3 +637,15 @@ Notes / Terminal / ScreenCont. : keyCode=54 (Right Command), normal
   ("after commit request: sel=... finalized=...") so the next recurrence shows the values.
 2026-09-02 06:42 | [push] blur-commit-double @ 6e850f5 -- fix(ime): stop doubling the last syllable after a client's commit request (Mail, Calendar, Edge)
 2026-09-02 06:42 | [PR] https://github.com/yoropico/bomi-input/pull/20
+- [held-strip-chromium] "Toggle then a fast key acts as a shortcut" (2026-09-07). Bomi-side strip is intact: every Cmd+key
+  that reached the IME within the held window since the 09-02 install was stripped (25 strips, 0 misses, both logs).
+  The leak is downstream, in two places. (1) Chromium/Electron (Edge, 1Password): a key equivalent reaches the IME
+  first, but keyEvent:wasKeyEquivalent: then forwards the REAL Cmd+key keydown -- and so the browser accelerator --
+  unless the IME left marked text or inserted >1 char during the event (render_widget_host_view_cocoa.mm:
+  "_hasMarkedText || oldHasMarkedText || _textToBeInserted.length() > 1"). Our roman-mode strip did a bare
+  one-char insertText, so Edge typed the letter AND ran Cmd+A/R/W. Korean mode was safe (setMarkedText). (2) Any host:
+  after the strip, every `return false` (passthrough keys, backspace on an empty composer, secure input) handed the
+  app the ORIGINAL Cmd+key. Fix: HeldKeyPolicy (BomiCore, tested) -- korean+composable -> composer; printable ASCII
+  -> setMarkedText now + insertText on the next runloop turn (markThenCommit; commit path shared with flush as
+  commitMarked); anything else -> swallowed. Nothing stripped ever returns false again. Not verified on-device yet:
+  needs a toggle+fast letter in Edge (expect the letter, no select-all/reload) and in BCT.
